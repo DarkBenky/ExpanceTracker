@@ -96,7 +96,38 @@ Add a user to an existing group. Only the group owner can perform this action.
 
 ---
 
-### 5. Add Expense
+### 5. Get User Groups
+**POST** `/groups/get`
+
+Get all groups where the user is a member.
+
+**Request:**
+```json
+{
+  "token": "your-jwt-token-here",
+  "user_id": 1
+}
+```
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "name": "Family Expenses",
+    "owner_id": 1
+  },
+  {
+    "id": 2,
+    "name": "Work Lunch",
+    "owner_id": 3
+  }
+]
+```
+
+---
+
+### 6. Add Expense
 **POST** `/expenses`
 
 Add a new expense to a group. Only group members can add expenses.
@@ -123,7 +154,53 @@ Add a new expense to a group. Only group members can add expenses.
 
 ---
 
-### 6. Remove Expense
+### 7. Get Expenses
+**POST** `/expenses/get`
+
+Get expenses for the user. Can optionally filter by group.
+
+**Request (all expenses):**
+```json
+{
+  "token": "your-jwt-token-here",
+  "user_id": 1
+}
+```
+
+**Request (specific group):**
+```json
+{
+  "token": "your-jwt-token-here",
+  "user_id": 1,
+  "group_id": 1
+}
+```
+
+**Response:**
+```json
+[
+  {
+    "id": 1,
+    "description": "Lunch at restaurant",
+    "amount": 25.50,
+    "category": "Food",
+    "date": "2025-08-04",
+    "owner_group_id": 1
+  },
+  {
+    "id": 2,
+    "description": "Coffee",
+    "amount": 4.50,
+    "category": "Food",
+    "date": "2025-08-03",
+    "owner_group_id": 1
+  }
+]
+```
+
+---
+
+### 8. Remove Expense
 **DELETE** `/expenses`
 
 Remove an expense from a group. Only group members can remove expenses.
