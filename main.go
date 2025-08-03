@@ -9,8 +9,12 @@ import (
 
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
 	_ "github.com/mattn/go-sqlite3"
+	"golang.org/x/crypto/bcrypt"
 )
+
+const salt = "1afdcf647dbd07d3539875501686b950e2f669ea3e216e10ce58fe543379fd2accc46b38ac86fca0ec253cb39eafe6bdf0cc3d1dbd123d5313c8c8168fe799ac"
 
 type Expense struct {
 	ID           int     `json:"id" db:"id"`
@@ -36,7 +40,7 @@ type User struct {
 
 var db *sql.DB
 
-// JWT secret key - in production, this should be in environment variables
+// JWT secret key
 var jwtSecret = []byte("380cde94f76c8d37d6c3946dff11dffdc5f469bdca3aff5931f1ae1a445856a9776c7624bfbdd8017806c64af182337e51a10c746321ac689cafef2a5bc1e90e")
 
 // JWT Claims structure
@@ -78,6 +82,30 @@ func validateToken(tokenString string) (int, error) {
 	}
 
 	return 0, errors.New("invalid token")
+}
+
+// Hash password using bcrypt
+func hashPassword(password string) (string, error) {
+	// Add salt to password before hashing
+	saltedPassword := password + salt
+
+	// Generate bcrypt hash with cost 12 (recommended for production)
+	hashedBytes, err := bcrypt.GenerateFromPassword([]byte(saltedPassword), 12)
+	if err != nil {
+		return "", err
+	}
+
+	return string(hashedBytes), nil
+}
+
+// Verify password using bcrypt
+func verifyPassword(password, hashedPassword string) bool {
+	// Add salt to password before verification
+	saltedPassword := password + salt
+
+	// Compare password with hash
+	err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(saltedPassword))
+	return err == nil
 }
 
 func initDB() {
@@ -304,6 +332,11 @@ func Register(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Username and password are required"})
 	}
 
+	// Validate password strength (optional but recommended)
+	if len(req.Password) < 8 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Password must be at least 8 characters long"})
+	}
+
 	// Check if username already exists
 	var exists bool
 	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)", req.Username).Scan(&exists)
@@ -314,8 +347,14 @@ func Register(c echo.Context) error {
 		return c.JSON(http.StatusConflict, map[string]string{"error": "Username already exists"})
 	}
 
-	// Insert new user (in production, hash the password!)
-	result, err := db.Exec("INSERT INTO users (username, password) VALUES (?, ?)", req.Username, req.Password)
+	// Hash the password using bcrypt
+	hashedPassword, err := hashPassword(req.Password)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to process password"})
+	}
+
+	// Insert new user with hashed password
+	result, err := db.Exec("INSERT INTO users (username, password) VALUES (?, ?)", req.Username, hashedPassword)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create user"})
 	}
@@ -352,8 +391,8 @@ func Login(c echo.Context) error {
 
 	// Check user credentials
 	var userID int
-	var storedPassword string
-	err := db.QueryRow("SELECT id, password FROM users WHERE username = ?", req.Username).Scan(&userID, &storedPassword)
+	var storedHashedPassword string
+	err := db.QueryRow("SELECT id, password FROM users WHERE username = ?", req.Username).Scan(&userID, &storedHashedPassword)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
@@ -361,8 +400,8 @@ func Login(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
 	}
 
-	// In production, use bcrypt to compare hashed passwords!
-	if storedPassword != req.Password {
+	// Verify password using bcrypt
+	if !verifyPassword(req.Password, storedHashedPassword) {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
 	}
 
@@ -477,18 +516,147 @@ func AddUserToGroup(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"message": "User added to group successfully"})
 }
 
+type GetExpensesRequest struct {
+	Token   string `json:"token"`              // JWT token for authentication
+	UserID  int    `json:"user_id"`            // ID of the user requesting expenses
+	GroupID int    `json:"group_id,omitempty"` // Optional: filter by group
+}
+
+func GetExpenses(c echo.Context) error {
+	var req GetExpensesRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+	}
+
+	// Validate JWT token
+	validUserID, err := validateToken(req.Token)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
+	}
+
+	// Ensure the token's user ID matches the request's user ID
+	if validUserID != req.UserID {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Token user ID does not match request user ID"})
+	}
+
+	// Build query based on whether group filter is provided
+	var query string
+	var args []interface{}
+
+	if req.GroupID > 0 {
+		// Check if user is member of the specific group
+		isMember, err := isUserInGroup(req.UserID, req.GroupID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+		}
+		if !isMember {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "User is not part of the group"})
+		}
+
+		query = `SELECT e.id, e.description, e.amount, e.category, e.date, e.owner_group_id 
+				 FROM expenses e 
+				 WHERE e.owner_group_id = ?
+				 ORDER BY e.date DESC`
+		args = []interface{}{req.GroupID}
+	} else {
+		// Get all expenses from groups where user is a member
+		query = `SELECT e.id, e.description, e.amount, e.category, e.date, e.owner_group_id 
+				 FROM expenses e 
+				 INNER JOIN group_members gm ON e.owner_group_id = gm.group_id 
+				 WHERE gm.user_id = ?
+				 ORDER BY e.date DESC`
+		args = []interface{}{req.UserID}
+	}
+
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+	defer rows.Close()
+
+	var expenses []Expense
+	for rows.Next() {
+		var expense Expense
+		err := rows.Scan(&expense.ID, &expense.Description, &expense.Amount,
+			&expense.Category, &expense.Date, &expense.OwnerGroupID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+		}
+		expenses = append(expenses, expense)
+	}
+
+	return c.JSON(http.StatusOK, expenses)
+}
+
+type GetGroupsRequest struct {
+	Token  string `json:"token"`   // JWT token for authentication
+	UserID int    `json:"user_id"` // ID of the user requesting groups
+}
+
+func GetUserGroups(c echo.Context) error {
+	var req GetGroupsRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+	}
+
+	// Validate JWT token
+	validUserID, err := validateToken(req.Token)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
+	}
+
+	// Ensure the token's user ID matches the request's user ID
+	if validUserID != req.UserID {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Token user ID does not match request user ID"})
+	}
+
+	// Get all groups where user is a member
+	query := `SELECT ug.id, ug.name, ug.owner_id 
+			  FROM users_groups ug 
+			  INNER JOIN group_members gm ON ug.id = gm.group_id 
+			  WHERE gm.user_id = ?
+			  ORDER BY ug.name`
+
+	rows, err := db.Query(query, req.UserID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+	defer rows.Close()
+
+	var groups []UsersGroup
+	for rows.Next() {
+		var group UsersGroup
+		err := rows.Scan(&group.ID, &group.Name, &group.OwnerID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+		}
+		groups = append(groups, group)
+	}
+
+	return c.JSON(http.StatusOK, groups)
+}
+
 func main() {
 	initDB()
 	defer db.Close()
 
 	e := echo.New()
 
+	// Add CORS middleware
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: []string{"http://localhost:3000"},
+		AllowMethods: []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete},
+		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept},
+	}))
+
 	// Routes
 	e.POST("/register", Register)
 	e.POST("/login", Login)
 	e.POST("/expenses", AddExpense)
+	e.POST("/expenses/get", GetExpenses)
 	e.DELETE("/expenses", RemoveExpense)
 	e.POST("/groups", CreateGroup)
+	e.POST("/groups/get", GetUserGroups)
 	e.POST("/groups/members", AddUserToGroup)
 
 	// Start server
