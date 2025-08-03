@@ -2,9 +2,12 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"log"
 	"net/http"
+	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
 	_ "github.com/mattn/go-sqlite3"
 )
@@ -32,6 +35,50 @@ type User struct {
 }
 
 var db *sql.DB
+
+// JWT secret key - in production, this should be in environment variables
+var jwtSecret = []byte("380cde94f76c8d37d6c3946dff11dffdc5f469bdca3aff5931f1ae1a445856a9776c7624bfbdd8017806c64af182337e51a10c746321ac689cafef2a5bc1e90e")
+
+// JWT Claims structure
+type JWTClaims struct {
+	UserID int `json:"user_id"`
+	jwt.RegisteredClaims
+}
+
+// Generate JWT token for user
+func generateToken(userID int) (string, error) {
+	claims := &JWTClaims{
+		UserID: userID,
+		RegisteredClaims: jwt.RegisteredClaims{
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(24 * time.Hour)), // Token expires in 24 hours
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(jwtSecret)
+}
+
+// Validate JWT token and extract user ID
+func validateToken(tokenString string) (int, error) {
+	if tokenString == "" {
+		return 0, errors.New("token is required")
+	}
+
+	token, err := jwt.ParseWithClaims(tokenString, &JWTClaims{}, func(token *jwt.Token) (interface{}, error) {
+		return jwtSecret, nil
+	})
+
+	if err != nil {
+		return 0, err
+	}
+
+	if claims, ok := token.Claims.(*JWTClaims); ok && token.Valid {
+		return claims.UserID, nil
+	}
+
+	return 0, errors.New("invalid token")
+}
 
 func initDB() {
 	var err error
@@ -136,8 +183,16 @@ func AddExpense(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "User not found"})
 	}
 
-	// check token validity (this is a placeholder, actual JWT validation should be implemented)
-	TODO
+	// Validate JWT token
+	validUserID, err := validateToken(req.Token)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
+	}
+
+	// Ensure the token's user ID matches the request's user ID
+	if validUserID != req.UserID {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Token user ID does not match request user ID"})
+	}
 
 	// Check if the user is part of the group
 	isMember, err := isUserInGroup(req.UserID, req.GroupID)
@@ -158,9 +213,285 @@ func AddExpense(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"message": "Expense added successfully"})
 }
 
+type removeExpenseRequest struct {
+	Token     string `json:"token"`      // JWT token for authentication
+	UserID    int    `json:"user_id"`    // ID of the user adding the expense
+	GroupID   int    `json:"group_id"`   // ID of the group to which the expense belongs
+	ExpenseID int    `json:"expense_id"` // ID of the expense to be removed
+}
+
+func checkExpenseExists(expenseID int) (bool, error) {
+	var exists bool
+	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM expenses WHERE id = ?)", expenseID).Scan(&exists)
+	if err != nil {
+		return false, err
+	}
+	return exists, nil
+}
+
 func RemoveExpense(c echo.Context) error {
+	var req removeExpenseRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+	}
+
+	// Validate required fields
+	if req.ExpenseID <= 0 || req.GroupID <= 0 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Expense ID and Group ID are required"})
+	}
+
+	// check if the user exists
+	exists, err := userExists(req.UserID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+	if !exists {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "User not found"})
+	}
+
+	// Validate JWT token
+	validUserID, err := validateToken(req.Token)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
+	}
+
+	// Ensure the token's user ID matches the request's user ID
+	if validUserID != req.UserID {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Token user ID does not match request user ID"})
+	}
+
+	// Check if the user is part of the group
+	isMember, err := isUserInGroup(req.UserID, req.GroupID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+	if !isMember {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "User is not part of the group"})
+	}
+
+	// Check if the expense exists
+	exists, err = checkExpenseExists(req.ExpenseID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+	if !exists {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Expense not found"})
+	}
+
+	// Delete the expense from the database
+	_, err = db.Exec(`DELETE FROM expenses WHERE id = ?`, req.ExpenseID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to remove expense"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Expense removed successfully"})
+}
+
+// User Registration
+type RegisterRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+func Register(c echo.Context) error {
+	var req RegisterRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+	}
+
+	// Validate required fields
+	if req.Username == "" || req.Password == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Username and password are required"})
+	}
+
+	// Check if username already exists
+	var exists bool
+	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM users WHERE username = ?)", req.Username).Scan(&exists)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+	if exists {
+		return c.JSON(http.StatusConflict, map[string]string{"error": "Username already exists"})
+	}
+
+	// Insert new user (in production, hash the password!)
+	result, err := db.Exec("INSERT INTO users (username, password) VALUES (?, ?)", req.Username, req.Password)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create user"})
+	}
+
+	userID, _ := result.LastInsertId()
+	token, err := generateToken(int(userID))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate token"})
+	}
+
+	return c.JSON(http.StatusCreated, map[string]interface{}{
+		"message": "User registered successfully",
+		"user_id": userID,
+		"token":   token,
+	})
+}
+
+// User Login
+type LoginRequest struct {
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+func Login(c echo.Context) error {
+	var req LoginRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+	}
+
+	// Validate required fields
+	if req.Username == "" || req.Password == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Username and password are required"})
+	}
+
+	// Check user credentials
+	var userID int
+	var storedPassword string
+	err := db.QueryRow("SELECT id, password FROM users WHERE username = ?", req.Username).Scan(&userID, &storedPassword)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+
+	// In production, use bcrypt to compare hashed passwords!
+	if storedPassword != req.Password {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid credentials"})
+	}
+
+	// Generate JWT token
+	token, err := generateToken(userID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate token"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"message": "Login successful",
+		"user_id": userID,
+		"token":   token,
+	})
+}
+
+type CreateGroupRequest struct {
+	Token string `json:"token"` // JWT token for authentication
+	Name  string `json:"name"`  // Name of the group
+}
+
+func CreateGroup(c echo.Context) error {
+	var req CreateGroupRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+	}
+
+	// Validate required fields
+	if req.Name == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Group name is required"})
+	}
+
+	// Validate JWT token
+	userID, err := validateToken(req.Token)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
+	}
+
+	// Insert new group into the database
+	result, err := db.Exec("INSERT INTO users_groups (name, owner_id) VALUES (?, ?)", req.Name, userID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create group"})
+	}
+
+	groupID, _ := result.LastInsertId()
+
+	// Add the owner to the group as a member
+	_, err = db.Exec("INSERT INTO group_members (group_id, user_id) VALUES (?, ?)", groupID, userID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to add owner to group"})
+	}
+
+	return c.JSON(http.StatusCreated, map[string]interface{}{
+		"message":  "Group created successfully",
+		"group_id": groupID,
+	})
+}
+
+type AddUserToGroupRequest struct {
+	Token   string `json:"token"`    // JWT token for authentication
+	GroupID int    `json:"group_id"` // ID of the group to which the user will be added
+	UserID  int    `json:"user_id"`  // ID of the user to be added to the group
+}
+
+func AddUserToGroup(c echo.Context) error {
+	var req AddUserToGroupRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+	}
+
+	// Validate required fields
+	if req.GroupID <= 0 || req.UserID <= 0 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Group ID and User ID are required"})
+	}
+
+	// Validate JWT token
+	validUserID, err := validateToken(req.Token)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
+	}
+
+	// Check if the user is the owner of the group
+	var ownerID int
+	err = db.QueryRow("SELECT owner_id FROM users_groups WHERE id = ?", req.GroupID).Scan(&ownerID)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "Group not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+
+	if ownerID != validUserID {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Only the group owner can add users"})
+	}
+
+	// Check if the user already exists in the group
+	var exists bool
+	err = db.QueryRow("SELECT EXISTS(SELECT 1 FROM group_members WHERE group_id = ? AND user_id = ?)", req.GroupID, req.UserID).Scan(&exists)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+	if exists {
+		return c.JSON(http.StatusConflict, map[string]string{"error": "User already exists in the group"})
+	}
+
+	// Add the user to the group
+	_, err = db.Exec("INSERT INTO group_members (group_id, user_id) VALUES (?, ?)", req.GroupID, req.UserID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to add user to group"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "User added to group successfully"})
+}
 
 func main() {
 	initDB()
+	defer db.Close()
 
+	e := echo.New()
+
+	// Routes
+	e.POST("/register", Register)
+	e.POST("/login", Login)
+	e.POST("/expenses", AddExpense)
+	e.DELETE("/expenses", RemoveExpense)
+	e.POST("/groups", CreateGroup)
+	e.POST("/groups/members", AddUserToGroup)
+
+	// Start server
+	log.Println("Server starting on :8080")
+	log.Fatal(e.Start(":8080"))
 }
