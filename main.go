@@ -14,7 +14,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-const salt = "1afdcf647dbd07d3539875501686b950e2f669ea3e216e10ce58fe543379fd2accc46b38ac86fca0ec253cb39eafe6bdf0cc3d1dbd123d5313c8c8168fe799ac"
+const salt = "1afdcf647dbd07d353987550168"
 
 type Expense struct {
 	ID           int     `json:"id" db:"id"`
@@ -636,6 +636,34 @@ func GetUserGroups(c echo.Context) error {
 	return c.JSON(http.StatusOK, groups)
 }
 
+type ValidateUserTokenRequest struct {
+	Token string `json:"token"` // JWT token for authentication
+}
+
+func ValidateUserToken(c echo.Context) error{
+	var req ValidateUserTokenRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request", "valid": "false"})
+	}
+	
+	// Validate JWT token
+	userID, err := validateToken(req.Token)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error(), "valid": "false"})
+	}
+
+	// Check if user exists
+	exists, err := userExists(userID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error", "valid": "false"})
+	}
+	if !exists {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "User not found"})
+	}
+	
+	return c.JSON(http.StatusOK, map[string]interface{}{"message": "Token is valid", "user_id": userID, "valid": "true"})
+}
+
 func main() {
 	initDB()
 	defer db.Close()
@@ -644,9 +672,9 @@ func main() {
 
 	// Add CORS middleware
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: []string{"http://localhost:3000"},
+		AllowOrigins: []string{"http://localhost:3000", "http://localhost:5173", "http://localhost:8080"},
 		AllowMethods: []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete},
-		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept},
+		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
 	}))
 
 	// Routes
@@ -658,8 +686,9 @@ func main() {
 	e.POST("/groups", CreateGroup)
 	e.POST("/groups/get", GetUserGroups)
 	e.POST("/groups/members", AddUserToGroup)
+	e.POST("/validate/token", ValidateUserToken)
 
 	// Start server
-	log.Println("Server starting on :8080")
-	log.Fatal(e.Start(":8080"))
+	log.Println("Server starting on :1234")
+	log.Fatal(e.Start(":1234"))
 }
