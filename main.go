@@ -3,6 +3,7 @@ package main
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -517,70 +518,70 @@ func AddUserToGroup(c echo.Context) error {
 }
 
 type GetExpensesRequest struct {
-    Token   string `json:"token"`              // JWT token for authentication
-    GroupID int    `json:"group_id,omitempty"` // Optional: filter by group, -1 for all groups
+	Token   string `json:"token"`              // JWT token for authentication
+	GroupID int    `json:"group_id,omitempty"` // Optional: filter by group, -1 for all groups
 }
 
 func GetExpenses(c echo.Context) error {
-    var req GetExpensesRequest
-    if err := c.Bind(&req); err != nil {
-        return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
-    }
+	var req GetExpensesRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+	}
 
-    // Validate JWT token
-    UserID, err := validateToken(req.Token)
-    if err != nil {
-        return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
-    }
+	// Validate JWT token
+	UserID, err := validateToken(req.Token)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
+	}
 
-    // Build query based on group filter
-    var query string
-    var args []interface{}
+	// Build query based on group filter
+	var query string
+	var args []interface{}
 
-    if req.GroupID > 0 {
-        // Check if user is member of the specific group
-        isMember, err := isUserInGroup(UserID, req.GroupID)
-        if err != nil {
-            return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
-        }
-        if !isMember {
-            return c.JSON(http.StatusForbidden, map[string]string{"error": "User is not part of the group"})
-        }
+	if req.GroupID > 0 {
+		// Check if user is member of the specific group
+		isMember, err := isUserInGroup(UserID, req.GroupID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+		}
+		if !isMember {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "User is not part of the group"})
+		}
 
-        // Get expenses from specific group
-        query = `SELECT e.id, e.description, e.amount, e.category, e.date, e.owner_group_id 
+		// Get expenses from specific group
+		query = `SELECT e.id, e.description, e.amount, e.category, e.date, e.owner_group_id 
                  FROM expenses e 
                  WHERE e.owner_group_id = ?
                  ORDER BY e.date DESC`
-        args = []interface{}{req.GroupID}
-    } else {
-        // Get all expenses from groups where user is a member (GroupID = 0, -1, or not provided)
-        query = `SELECT e.id, e.description, e.amount, e.category, e.date, e.owner_group_id 
+		args = []interface{}{req.GroupID}
+	} else {
+		// Get all expenses from groups where user is a member (GroupID = 0, -1, or not provided)
+		query = `SELECT e.id, e.description, e.amount, e.category, e.date, e.owner_group_id 
                  FROM expenses e 
                  INNER JOIN group_members gm ON e.owner_group_id = gm.group_id 
                  WHERE gm.user_id = ?
                  ORDER BY e.date DESC`
-        args = []interface{}{UserID}
-    }
+		args = []interface{}{UserID}
+	}
 
-    rows, err := db.Query(query, args...)
-    if err != nil {
-        return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
-    }
-    defer rows.Close()
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+	defer rows.Close()
 
-    var expenses []Expense
-    for rows.Next() {
-        var expense Expense
-        err := rows.Scan(&expense.ID, &expense.Description, &expense.Amount,
-            &expense.Category, &expense.Date, &expense.OwnerGroupID)
-        if err != nil {
-            return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
-        }
-        expenses = append(expenses, expense)
-    }
+	var expenses []Expense
+	for rows.Next() {
+		var expense Expense
+		err := rows.Scan(&expense.ID, &expense.Description, &expense.Amount,
+			&expense.Category, &expense.Date, &expense.OwnerGroupID)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+		}
+		expenses = append(expenses, expense)
+	}
 
-    return c.JSON(http.StatusOK, expenses)
+	return c.JSON(http.StatusOK, expenses)
 }
 
 type GetGroupsRequest struct {
@@ -635,12 +636,12 @@ type ValidateUserTokenRequest struct {
 	Token string `json:"token"` // JWT token for authentication
 }
 
-func ValidateUserToken(c echo.Context) error{
+func ValidateUserToken(c echo.Context) error {
 	var req ValidateUserTokenRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request", "valid": "false"})
 	}
-	
+
 	// Validate JWT token
 	userID, err := validateToken(req.Token)
 	if err != nil {
@@ -655,13 +656,132 @@ func ValidateUserToken(c echo.Context) error{
 	if !exists {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "User not found"})
 	}
-	
+
 	return c.JSON(http.StatusOK, map[string]interface{}{"message": "Token is valid", "user_id": userID, "valid": "true"})
+}
+
+func populateFakeData() error {
+	// Check if data already exists to avoid duplicates
+	var userCount int
+	err := db.QueryRow("SELECT COUNT(*) FROM users").Scan(&userCount)
+	if err != nil {
+		return err
+	}
+
+	// If users already exist, skip population
+	if userCount > 0 {
+		log.Println("Database already contains data, skipping fake data population")
+		return nil
+	}
+
+	log.Println("Populating database with fake data...")
+
+	// Create fake users
+	fakeUsers := []struct {
+		username string
+		password string
+	}{
+		{"alice", "password123"},
+		{"bob", "password123"},
+		{"charlie", "password123"},
+		{"diana", "password123"},
+		{"eve", "password123"},
+	}
+
+	var userIDs []int
+	for _, user := range fakeUsers {
+		hashedPassword, err := hashPassword(user.password)
+		if err != nil {
+			fmt.Println("Error hashing password for user:", user.username, err)
+			return err
+		}
+
+		result, err := db.Exec("INSERT INTO users (username, password) VALUES (?, ?)", user.username, hashedPassword)
+		if err != nil {
+			fmt.Println("Error inserting user:", user.username, err)
+			return err
+		}
+
+		userID, _ := result.LastInsertId()
+		userIDs = append(userIDs, int(userID))
+	}
+
+	// Create fake groups
+	fakeGroups := []struct {
+		name    string
+		ownerID int
+		members []int
+	}{
+		{"Family", userIDs[0], []int{userIDs[0], userIDs[1], userIDs[2]}},
+		{"Work Team", userIDs[1], []int{userIDs[1], userIDs[3], userIDs[4]}},
+		{"Friends", userIDs[2], []int{userIDs[0], userIDs[2], userIDs[3]}},
+		{"Roommates", userIDs[3], []int{userIDs[3], userIDs[4]}},
+	}
+
+	var groupIDs []int
+	for _, group := range fakeGroups {
+		result, err := db.Exec("INSERT INTO users_groups (name, owner_id) VALUES (?, ?)", group.name, group.ownerID)
+		if err != nil {
+			return err
+		}
+
+		groupID, _ := result.LastInsertId()
+		groupIDs = append(groupIDs, int(groupID))
+
+		// Add members to group
+		for _, memberID := range group.members {
+			_, err = db.Exec("INSERT INTO group_members (group_id, user_id) VALUES (?, ?)", groupID, memberID)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// Create fake expenses
+	fakeExpenses := []struct {
+		description string
+		amount      float64
+		category    string
+		date        string
+		groupID     int
+	}{
+		{"Grocery shopping", 85.50, "Food", "2024-01-15", groupIDs[0]},
+		{"Coffee meeting", 12.30, "Food", "2024-01-16", groupIDs[1]},
+		{"Movie tickets", 45.00, "Entertainment", "2024-01-17", groupIDs[2]},
+		{"Electricity bill", 120.75, "Utilities", "2024-01-18", groupIDs[3]},
+		{"Gas station", 60.00, "Transportation", "2024-01-19", groupIDs[0]},
+		{"Restaurant dinner", 78.90, "Food", "2024-01-20", groupIDs[1]},
+		{"Netflix subscription", 15.99, "Entertainment", "2024-01-21", groupIDs[2]},
+		{"Internet bill", 55.00, "Utilities", "2024-01-22", groupIDs[3]},
+		{"Bus pass", 25.00, "Transportation", "2024-01-23", groupIDs[0]},
+		{"Lunch", 18.50, "Food", "2024-01-24", groupIDs[1]},
+		{"Concert tickets", 95.00, "Entertainment", "2024-01-25", groupIDs[2]},
+		{"Water bill", 45.25, "Utilities", "2024-01-26", groupIDs[3]},
+		{"Uber ride", 22.80, "Transportation", "2024-01-27", groupIDs[0]},
+		{"Pizza order", 35.60, "Food", "2024-01-28", groupIDs[1]},
+		{"Gaming subscription", 9.99, "Entertainment", "2024-01-29", groupIDs[2]},
+	}
+
+	for _, expense := range fakeExpenses {
+		_, err = db.Exec("INSERT INTO expenses (description, amount, category, date, owner_group_id) VALUES (?, ?, ?, ?, ?)",
+			expense.description, expense.amount, expense.category, expense.date, expense.groupID)
+		if err != nil {
+			return err
+		}
+	}
+
+	log.Println("Fake data populated successfully!")
+	return nil
 }
 
 func main() {
 	initDB()
 	defer db.Close()
+
+	// Populate fake data if database is empty
+	if err := populateFakeData(); err != nil {
+		log.Printf("Error populating fake data: %v", err)
+	}
 
 	e := echo.New()
 

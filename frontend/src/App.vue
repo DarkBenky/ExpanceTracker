@@ -1,7 +1,7 @@
 <template>
   <div class="app">
     <div v-if="isAuthenticated">
-      <ListExpenses :token="token" :user="user" />
+      <ListExpenses/>
       <button @click="clearAuth" class="btn btn-secondary">Logout</button>
     </div>
     <div v-else>
