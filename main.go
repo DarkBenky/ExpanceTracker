@@ -517,75 +517,70 @@ func AddUserToGroup(c echo.Context) error {
 }
 
 type GetExpensesRequest struct {
-	Token   string `json:"token"`              // JWT token for authentication
-	UserID  int    `json:"user_id"`            // ID of the user requesting expenses
-	GroupID int    `json:"group_id,omitempty"` // Optional: filter by group
+    Token   string `json:"token"`              // JWT token for authentication
+    GroupID int    `json:"group_id,omitempty"` // Optional: filter by group, -1 for all groups
 }
 
 func GetExpenses(c echo.Context) error {
-	var req GetExpensesRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
-	}
+    var req GetExpensesRequest
+    if err := c.Bind(&req); err != nil {
+        return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+    }
 
-	// Validate JWT token
-	validUserID, err := validateToken(req.Token)
-	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
-	}
+    // Validate JWT token
+    UserID, err := validateToken(req.Token)
+    if err != nil {
+        return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
+    }
 
-	// Ensure the token's user ID matches the request's user ID
-	if validUserID != req.UserID {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Token user ID does not match request user ID"})
-	}
+    // Build query based on group filter
+    var query string
+    var args []interface{}
 
-	// Build query based on whether group filter is provided
-	var query string
-	var args []interface{}
+    if req.GroupID > 0 {
+        // Check if user is member of the specific group
+        isMember, err := isUserInGroup(UserID, req.GroupID)
+        if err != nil {
+            return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+        }
+        if !isMember {
+            return c.JSON(http.StatusForbidden, map[string]string{"error": "User is not part of the group"})
+        }
 
-	if req.GroupID > 0 {
-		// Check if user is member of the specific group
-		isMember, err := isUserInGroup(req.UserID, req.GroupID)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
-		}
-		if !isMember {
-			return c.JSON(http.StatusForbidden, map[string]string{"error": "User is not part of the group"})
-		}
+        // Get expenses from specific group
+        query = `SELECT e.id, e.description, e.amount, e.category, e.date, e.owner_group_id 
+                 FROM expenses e 
+                 WHERE e.owner_group_id = ?
+                 ORDER BY e.date DESC`
+        args = []interface{}{req.GroupID}
+    } else {
+        // Get all expenses from groups where user is a member (GroupID = 0, -1, or not provided)
+        query = `SELECT e.id, e.description, e.amount, e.category, e.date, e.owner_group_id 
+                 FROM expenses e 
+                 INNER JOIN group_members gm ON e.owner_group_id = gm.group_id 
+                 WHERE gm.user_id = ?
+                 ORDER BY e.date DESC`
+        args = []interface{}{UserID}
+    }
 
-		query = `SELECT e.id, e.description, e.amount, e.category, e.date, e.owner_group_id 
-				 FROM expenses e 
-				 WHERE e.owner_group_id = ?
-				 ORDER BY e.date DESC`
-		args = []interface{}{req.GroupID}
-	} else {
-		// Get all expenses from groups where user is a member
-		query = `SELECT e.id, e.description, e.amount, e.category, e.date, e.owner_group_id 
-				 FROM expenses e 
-				 INNER JOIN group_members gm ON e.owner_group_id = gm.group_id 
-				 WHERE gm.user_id = ?
-				 ORDER BY e.date DESC`
-		args = []interface{}{req.UserID}
-	}
+    rows, err := db.Query(query, args...)
+    if err != nil {
+        return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+    }
+    defer rows.Close()
 
-	rows, err := db.Query(query, args...)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
-	}
-	defer rows.Close()
+    var expenses []Expense
+    for rows.Next() {
+        var expense Expense
+        err := rows.Scan(&expense.ID, &expense.Description, &expense.Amount,
+            &expense.Category, &expense.Date, &expense.OwnerGroupID)
+        if err != nil {
+            return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+        }
+        expenses = append(expenses, expense)
+    }
 
-	var expenses []Expense
-	for rows.Next() {
-		var expense Expense
-		err := rows.Scan(&expense.ID, &expense.Description, &expense.Amount,
-			&expense.Category, &expense.Date, &expense.OwnerGroupID)
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
-		}
-		expenses = append(expenses, expense)
-	}
-
-	return c.JSON(http.StatusOK, expenses)
+    return c.JSON(http.StatusOK, expenses)
 }
 
 type GetGroupsRequest struct {
