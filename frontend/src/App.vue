@@ -1,8 +1,8 @@
 <template>
   <div class="app">
     <div v-if="isAuthenticated">
-      <ListExpenses/>
       <button @click="clearAuth" class="btn btn-secondary">Logout</button>
+      <ListExpenses/>
     </div>
     <div v-else>
       <LoginRegister 

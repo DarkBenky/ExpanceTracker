@@ -1,15 +1,35 @@
 <template>
     <div class="expenses-container">
+        <div class="groups-section">
+            <h3>Groups</h3>
+            <div v-for="group in groups" :key="group.id" class="group-item">
+                <span>{{ group.name }}</span>
+                <button @click="groupID = group.id" :class="{ active: groupID === group.id }">
+                    {{ groupID === group.id ? 'Selected' : 'Select' }}
+                </button>
+            </div>
+        </div>
+
         <h2 class="title">Expenses Dashboard</h2>
         <div v-if="!isAuthenticated" class="auth-message">
             <p>Please log in to view your expenses.</p>
         </div>
         <div v-else class="dashboard">
-            <!-- Chart Controls -->
-            <div class="chart-controls">
-                <button @click="toggleCharts" class="toggle-btn">
-                    {{ showCharts ? 'Hide Charts' : 'Show Charts' }}
-                </button>
+            <!-- Controls -->
+            <div class="controls">
+                <div class="chart-controls">
+                    <button @click="toggleCharts" class="toggle-btn">
+                        {{ showCharts ? 'Hide Charts' : 'Show Charts' }}
+                    </button>
+                </div>
+                <div class="refresh-controls">
+                    <button @click="manualRefresh" class="refresh-btn" :disabled="isLoading">
+                        {{ isLoading ? 'Loading...' : 'Refresh Now' }}
+                    </button>
+                    <button @click="toggleAutoRefresh" class="auto-refresh-btn" :class="{ active: autoRefresh }">
+                        Auto-refresh: {{ autoRefresh ? 'ON' : 'OFF' }}
+                    </button>
+                </div>
             </div>
 
             <!-- Charts Section -->
@@ -34,7 +54,27 @@
                         <button v-if="addExpense != month.name" @click="selectForm(month.name)">Add Expense</button>
                         <button v-else @click="selectForm(month.name)">Close Form</button>
                         <div v-if="addExpense == month.name">
-                            form
+                            <form @submit.prevent="addExpenseToMonth(month.name)">
+                                <div class="input-group">
+                                    <label for="description">Description</label>
+                                    <input type="text" v-model="newExpense.description" required />
+                                </div>
+                                <div class="input-group">
+                                    <label for="amount">Amount</label>
+                                    <input type="number" step="0.01" v-model.number="newExpense.amount" required />
+                                </div>
+                                <div class="input-group">
+                                    <label for="category">Category</label>
+                                    <select v-model="newExpense.category" required>
+                                        <option value="" disabled>Select Category</option>
+                                        <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+                                    </select>
+                                </div>
+                                <div class="form-buttons">
+                                    <button type="submit" class="btn btn-primary">Add Expense</button>
+                                    <button type="button" @click="addExpense = null" class="btn btn-secondary">Cancel</button>
+                                </div>
+                            </form>
                         </div>
                     </div>
 
@@ -100,6 +140,7 @@ export default {
                 11: { name: 'November', expenses: [], total: 0, byCategory: {} },
                 12: { name: 'December', expenses: [], total: 0, byCategory: {} },
             },
+            groups: [],
             groupID: -1,
             expenses: [],
             isAuthenticated: false,
@@ -109,15 +150,88 @@ export default {
             showCharts: true,
             monthCharts: {},
             addExpense: null,
+            refreshInterval: null,
+            autoRefresh: true,
+            refreshIntervalTime: 30000, // 30 seconds
+            newExpense: {
+                description: '',
+                amount: 0,
+                category: '',
+                date: ''
+            },
+            categories: [
+                'Food & Dining',
+                'Transportation',
+                'Shopping',
+                'Entertainment',
+                'Bills & Utilities',
+                'Healthcare',
+                'Travel',
+                'Education',
+                'Other'
+            ],
+            isLoading: false,
+            errorMessage: '',
         }
     },
     async created() {
         await this.checkExistingToken();
         if (this.isAuthenticated) {
             this.getExpenses();
+            this.GetGroups();
+            this.startPeriodicRefresh();
+        }
+    },
+    beforeUnmount() {
+        // Clean up the interval when component is destroyed
+        this.stopPeriodicRefresh();
+    },
+    watch: {
+        groupID(newGroupId) {
+            if (newGroupId !== -1 && this.isAuthenticated) {
+                this.getExpenses();
+            }
+        },
+        isAuthenticated(newAuth) {
+            if (newAuth) {
+                this.startPeriodicRefresh();
+            } else {
+                this.stopPeriodicRefresh();
+            }
         }
     },
     methods: {
+        startPeriodicRefresh() {
+            if (this.refreshInterval) {
+                clearInterval(this.refreshInterval);
+            }
+            
+            this.refreshInterval = setInterval(() => {
+                if (this.autoRefresh && this.isAuthenticated && this.groupID !== -1) {
+                    console.log('Auto-refreshing expenses data...');
+                    this.getExpenses();
+                }
+            }, this.refreshIntervalTime);
+        },
+        stopPeriodicRefresh() {
+            if (this.refreshInterval) {
+                clearInterval(this.refreshInterval);
+                this.refreshInterval = null;
+            }
+        },
+        toggleAutoRefresh() {
+            this.autoRefresh = !this.autoRefresh;
+            if (this.autoRefresh) {
+                this.startPeriodicRefresh();
+            } else {
+                this.stopPeriodicRefresh();
+            }
+        },
+        manualRefresh() {
+            if (this.isAuthenticated && this.groupID !== -1) {
+                this.getExpenses();
+            }
+        },
         selectForm(monthName) {
             if (this.addExpense === monthName) {
                 this.addExpense = null; // Deselect if already selected
@@ -125,11 +239,74 @@ export default {
                 this.addExpense = monthName; // Select the month for adding expense
             }
         },
-        // async addExpense() {
-        //     try {
-        //         const response
-        //     }
-        // },
+        async addExpenseToMonth(monthName) {
+            if (!this.newExpense.description || !this.newExpense.amount || !this.newExpense.category) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            // Get the month number from month name
+            const monthNumber = Object.keys(this.months).find(key => 
+                this.months[key].name === monthName
+            );
+
+            // Create date for the selected month (using first day of the month)
+            const currentYear = new Date().getFullYear();
+            const expenseDate = new Date(currentYear, parseInt(monthNumber), 1);
+            
+            try {
+                const response = await axios.post(`${this.$apiUrl}expenses`, {
+                    token: this.token,
+                    group_id: this.groupID,
+                    description: this.newExpense.description,
+                    amount: this.newExpense.amount,
+                    category: this.newExpense.category,
+                    date: expenseDate.toISOString().split('T')[0] // Format as YYYY-MM-DD
+                });
+
+                if (response.status === 200) {
+                    // Reset form
+                    this.newExpense = {
+                        description: '',
+                        amount: 0,
+                        category: '',
+                        date: ''
+                    };
+                    
+                    // Close form
+                    this.addExpense = null;
+                    
+                    // Refresh expenses to show the new one
+                    await this.getExpenses();
+                    
+                    alert('Expense added successfully!');
+                }
+            } catch (error) {
+                console.error('Error adding expense:', error);
+                if (error.response && error.response.data && error.response.data.error) {
+                    alert('Error: ' + error.response.data.error);
+                } else {
+                    alert('Failed to add expense. Please try again.');
+                }
+            }
+        },
+        async GetGroups() {
+            try {
+                const response = await axios.post(`${this.$apiUrl}groups/get`, {
+                    token: this.token,
+                });
+                
+                // The API returns the groups array directly, not nested under 'groups'
+                if (response.data && Array.isArray(response.data)) {
+                    this.groups = response.data;
+                    console.log("Groups fetched successfully:", this.groups);
+                } else {
+                    console.error("No groups found in response:", response.data);
+                }
+            } catch (error) {
+                console.error("Error fetching groups:", error);
+            }
+        },
         sortExpensesByMonth() {
             // Clear existing expenses from months
             Object.values(this.months).forEach(month => month.expenses = []);
@@ -429,9 +606,15 @@ export default {
     margin: 0 auto;
 }
 
+.controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 2rem;
+}
+
 .chart-controls {
     text-align: center;
-    margin-bottom: 2rem;
 }
 
 .toggle-btn {
@@ -449,6 +632,33 @@ export default {
 .toggle-btn:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.refresh-controls {
+    display: flex;
+    gap: 1rem;
+}
+
+.refresh-btn, .auto-refresh-btn {
+    background: #374151;
+    color: #e5e7eb;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.2s;
+}
+
+.refresh-btn:disabled {
+    background: #6b7280;
+    cursor: not-allowed;
+}
+
+.auto-refresh-btn.active {
+    background: #22c55e;
+    color: white;
 }
 
 .charts-section {
@@ -471,6 +681,52 @@ export default {
     margin-bottom: 1rem;
     font-size: 1.25rem;
     font-weight: 600;
+}
+
+.groups-section {
+    margin-bottom: 2rem;
+}
+
+.group-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    background: #1f2937;
+    border-radius: 8px;
+    margin-bottom: 0.75rem;
+    border: 1px solid transparent;
+    transition: border-color 0.2s;
+}
+
+.group-item:hover {
+    border-color: #374151;
+}
+
+.group-item span {
+    color: #d1d5db;
+    font-weight: 500;
+}
+
+.group-item button {
+    background: #374151;
+    color: #e5e7eb;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.2s;
+}
+
+.group-item button.active {
+    background: #6366f1;
+    color: white;
+}
+
+.group-item button:hover {
+    transform: translateY(-2px);
 }
 
 .months-grid {
@@ -604,6 +860,86 @@ export default {
 
 .expense-date {
     color: #9ca3af;
+}
+
+.input-group {
+    margin-bottom: 1rem;
+}
+
+.input-group label {
+    display: block;
+    color: #d1d5db;
+    font-weight: 500;
+    margin-bottom: 0.5rem;
+}
+
+.input-group input,
+.input-group select {
+    width: 100%;
+    background: #1f2937;
+    border: 1px solid #4b5563;
+    border-radius: 6px;
+    padding: 0.75rem;
+    color: #e5e7eb;
+    font-size: 1rem;
+}
+
+.input-group input:focus,
+.input-group select:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+.form-buttons {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1.5rem;
+}
+
+.btn {
+    padding: 0.75rem 1.5rem;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: none;
+}
+
+.btn-primary {
+    background: #6366f1;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #5b57d9;
+    transform: translateY(-1px);
+}
+
+.btn-secondary {
+    background: #6b7280;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #5a616d;
+}
+
+.month-header button {
+    background: #4f46e5;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.2s;
+}
+
+.month-header button:hover {
+    background: #4338ca;
+    transform: translateY(-1px);
 }
 
 @media (max-width: 768px) {

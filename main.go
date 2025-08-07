@@ -184,7 +184,6 @@ func userExists(userID int) (bool, error) {
 
 type AddExpenseRequest struct {
 	Token       string  `json:"token"`    // JWT token for authentication
-	UserID      int     `json:"user_id"`  // ID of the user adding the expense
 	GroupID     int     `json:"group_id"` // ID of the group to which the expense belongs
 	Description string  `json:"description"`
 	Amount      float64 `json:"amount"`
@@ -203,8 +202,14 @@ func AddExpense(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "All fields are required"})
 	}
 
+	// Validate JWT token and get user ID
+	userID, err := validateToken(req.Token)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
+	}
+
 	// check if the user exists
-	exists, err := userExists(req.UserID)
+	exists, err := userExists(userID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
 	}
@@ -212,19 +217,8 @@ func AddExpense(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "User not found"})
 	}
 
-	// Validate JWT token
-	validUserID, err := validateToken(req.Token)
-	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
-	}
-
-	// Ensure the token's user ID matches the request's user ID
-	if validUserID != req.UserID {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Token user ID does not match request user ID"})
-	}
-
 	// Check if the user is part of the group
-	isMember, err := isUserInGroup(req.UserID, req.GroupID)
+	isMember, err := isUserInGroup(userID, req.GroupID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
 	}
@@ -244,7 +238,6 @@ func AddExpense(c echo.Context) error {
 
 type removeExpenseRequest struct {
 	Token     string `json:"token"`      // JWT token for authentication
-	UserID    int    `json:"user_id"`    // ID of the user adding the expense
 	GroupID   int    `json:"group_id"`   // ID of the group to which the expense belongs
 	ExpenseID int    `json:"expense_id"` // ID of the expense to be removed
 }
@@ -269,8 +262,14 @@ func RemoveExpense(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Expense ID and Group ID are required"})
 	}
 
+	// Validate JWT token and get user ID
+	userID, err := validateToken(req.Token)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
+	}
+
 	// check if the user exists
-	exists, err := userExists(req.UserID)
+	exists, err := userExists(userID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
 	}
@@ -278,19 +277,8 @@ func RemoveExpense(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "User not found"})
 	}
 
-	// Validate JWT token
-	validUserID, err := validateToken(req.Token)
-	if err != nil {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
-	}
-
-	// Ensure the token's user ID matches the request's user ID
-	if validUserID != req.UserID {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Token user ID does not match request user ID"})
-	}
-
 	// Check if the user is part of the group
-	isMember, err := isUserInGroup(req.UserID, req.GroupID)
+	isMember, err := isUserInGroup(userID, req.GroupID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
 	}
@@ -585,8 +573,7 @@ func GetExpenses(c echo.Context) error {
 }
 
 type GetGroupsRequest struct {
-	Token  string `json:"token"`   // JWT token for authentication
-	UserID int    `json:"user_id"` // ID of the user requesting groups
+	Token string `json:"token"` // JWT token for authentication
 }
 
 func GetUserGroups(c echo.Context) error {
@@ -601,19 +588,14 @@ func GetUserGroups(c echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
 	}
 
-	// Ensure the token's user ID matches the request's user ID
-	if validUserID != req.UserID {
-		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Token user ID does not match request user ID"})
-	}
-
 	// Get all groups where user is a member
 	query := `SELECT ug.id, ug.name, ug.owner_id 
-			  FROM users_groups ug 
-			  INNER JOIN group_members gm ON ug.id = gm.group_id 
-			  WHERE gm.user_id = ?
-			  ORDER BY ug.name`
+              FROM users_groups ug 
+              INNER JOIN group_members gm ON ug.id = gm.group_id 
+              WHERE gm.user_id = ?
+              ORDER BY ug.name`
 
-	rows, err := db.Query(query, req.UserID)
+	rows, err := db.Query(query, validUserID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
 	}
