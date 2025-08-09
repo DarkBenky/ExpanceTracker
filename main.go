@@ -585,6 +585,64 @@ func GetExpenses(c echo.Context) error {
 	return c.JSON(http.StatusOK, expenses)
 }
 
+type UpdateExpenseRequest struct {
+	Token       string  `json:"token"`       // JWT token for authentication
+	GroupID     int     `json:"group_id"`    // ID of the group to which the expense belongs
+	ExpenseID   int     `json:"expense_id"`  // ID of the expense to be updated
+	Description string  `json:"description"` // Updated description of the expense
+	Amount      float64 `json:"amount"`      // Updated amount of the expense
+	Category    string  `json:"category"`    // Updated category of the expense
+	Date        string  `json:"date"`        // Updated date of the expense
+}
+
+func UpdateExpense(c echo.Context) error {
+	var req UpdateExpenseRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+	}
+	// Validate required fields
+	if req.ExpenseID <= 0 || req.GroupID <= 0 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Expense ID and Group ID are required"})
+	}
+	// Validate JWT token and get user ID
+	userID, err := validateToken(req.Token)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
+	}
+	// check if the user exists
+	exists, err := userExists(userID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+	if !exists {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "User not found"})
+	}
+	// Check if the user is part of the group
+	isMember, err := isUserInGroup(userID, req.GroupID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+	if !isMember {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "User is not part of the group"})
+	}
+
+	// Check if the expense exists
+	exists, err = checkExpenseExists(req.ExpenseID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+	if !exists {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Expense not found"})
+	}
+	// Update the expense in the database
+	_, err = db.Exec(`UPDATE expenses SET description = ?, amount = ?, category = ?, date = ?
+		WHERE id = ? AND owner_group_id = ?`, req.Description, req.Amount, req.Category, req.Date, req.ExpenseID, req.GroupID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update expense"})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"message": "Expense updated successfully"})
+}
+
 type GetGroupsRequest struct {
 	Token string `json:"token"` // JWT token for authentication
 }
@@ -792,6 +850,7 @@ func main() {
 	e.POST("/login", Login)
 	e.POST("/expenses", AddExpense)
 	e.POST("/expenses/get", GetExpenses)
+	e.POST("/expenses/update", UpdateExpense)
 	e.DELETE("/expenses", RemoveExpense)
 	e.POST("/groups", CreateGroup)
 	e.POST("/groups/get", GetUserGroups)

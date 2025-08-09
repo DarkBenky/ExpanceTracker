@@ -33,7 +33,7 @@
             </div>
 
             <!-- Charts Section -->
-            <div v-if="showCharts" class="charts-section" :key="'charts-'+groupRenderKey">
+            <div v-if="showCharts" class="charts-section" :key="'charts-' + groupRenderKey">
                 <div class="chart-container">
                     <h3>Monthly Expenses Trend</h3>
                     <canvas id="monthlyChart"></canvas>
@@ -72,7 +72,8 @@
                                 </div>
                                 <div class="form-buttons">
                                     <button type="submit" class="btn btn-primary">Add Expense</button>
-                                    <button type="button" @click="addExpense = null" class="btn btn-secondary">Cancel</button>
+                                    <button type="button" @click="addExpense = null"
+                                        class="btn btn-secondary">Cancel</button>
                                 </div>
                             </form>
                         </div>
@@ -108,7 +109,8 @@
                                     <span class="expense-date">{{ formatDate(expense.date) }}</span>
                                 </div>
                                 <button @click="deleteExpense(expense.id)">Delete Expense</button>
-                                <button v-if="editExpenseId !== expense.id" @click="editExpenseId = expense.id">Edit Expense</button>
+                                <button v-if="editExpenseId !== expense.id" @click="editExpenseId = expense.id">Edit
+                                    Expense</button>
                                 <button v-else @click="editExpenseId = null">Cancel Edit</button>
                                 <form v-if="this.editExpenseId == expense.id">
                                     <div class="input-group">
@@ -126,9 +128,39 @@
                                             <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
                                         </select>
                                     </div>
+                                    <div class="input-group">
+                                        <label for="editDate">Date</label>
+                                        <div class="date-selectors">
+                                            <select v-if="editDate.month != '' && editDate.year != ''"
+                                                v-model="editDate.day" @change="updateExpenseDate(expense)" required>
+                                                <option value="" disabled>Day</option>
+                                                <option v-for="day in getDaysInEditMonth(editDate.month, editDate.year)"
+                                                    :key="day" :value="day">
+                                                    {{ day }}
+                                                </option>
+                                            </select>
+                                            <select v-model="editDate.month" @change="updateExpenseDate(expense)"
+                                                required>
+                                                <option value="" disabled>Month</option>
+                                                <option v-for="month in getMonthOptions()" :key="month.value"
+                                                    :value="month.value">
+                                                    {{ month.label }}
+                                                </option>
+                                            </select>
+                                            <select v-model="editDate.year" @change="updateExpenseDate(expense)"
+                                                required>
+                                                <option value="" disabled>Year</option>
+                                                <option v-for="year in getYearOptions()" :key="year" :value="year">
+                                                    {{ year }}
+                                                </option>
+                                            </select>
+                                        </div>
+                                    </div>
                                     <div class="form-buttons">
-                                        <button type="submit" @click.prevent="updateExpense(expense)" class="btn btn-primary">Update Expense</button>
-                                        <button type="button" @click="this.editExpenseId = null" class="btn btn-secondary">Cancel</button>
+                                        <button type="submit" @click.prevent="updateExpense(expense)"
+                                            class="btn btn-primary">Update Expense</button>
+                                        <button type="button" @click="this.editExpenseId = null"
+                                            class="btn btn-secondary">Cancel</button>
                                     </div>
                                 </form>
                             </div>
@@ -184,6 +216,11 @@ export default {
                 category: '',
                 date: ''
             },
+            editDate: {
+                day: '',
+                month: '',
+                year: ''
+            },
             categories: [
                 'Food & Dining',
                 'Transportation',
@@ -229,6 +266,93 @@ export default {
         }
     },
     methods: {
+        updateExpense(expense) {
+            if (!expense.description || !expense.amount || !expense.category) {
+                alert('Please fill in all fields');
+                return;
+            }
+
+            // Ensure date is properly formatted
+            let formattedDate = expense.date;
+            if (this.editDate.day && this.editDate.month && this.editDate.year) {
+                // If date was edited using the selectors, format it properly
+                const day = String(this.editDate.day).padStart(2, '0');
+                const month = String(this.editDate.month).padStart(2, '0');
+                formattedDate = `${this.editDate.year}-${month}-${day}`;
+            }
+
+            // Update the expense in the database
+            axios.post(`${this.$apiUrl}expenses/update`, {
+                token: this.token,
+                group_id: this.groupID,
+                expense_id: expense.id,
+                description: expense.description,
+                amount: parseFloat(expense.amount), // Ensure amount is a number
+                category: expense.category,
+                date: formattedDate // Ensure date is in YYYY-MM-DD format
+            }).then(response => {
+                if (response.status === 200) {
+                    this.editExpenseId = null; // Close edit form
+                    // Reset edit date selectors
+                    this.editDate = {
+                        day: '',
+                        month: '',
+                        year: ''
+                    };
+                    alert('Expense updated successfully!');
+                }
+            }).catch(error => {
+                console.error('Error updating expense:', error);
+                if (error.response && error.response.data && error.response.data.error) {
+                    alert('Error: ' + error.response.data.error);
+                } else {
+                    alert('Failed to update expense. Please try again.');
+                }
+            });
+        },
+
+        // Add this method to properly initialize edit form with current expense data
+        editExpense(expense) {
+            this.editExpenseId = expense.id;
+
+            // Initialize date selectors with current expense date
+            if (expense.date) {
+                const date = new Date(expense.date);
+                this.editDate = {
+                    day: date.getDate(),
+                    month: date.getMonth() + 1, // getMonth() returns 0-11
+                    year: date.getFullYear()
+                };
+            } else {
+                this.editDate = {
+                    day: '',
+                    month: '',
+                    year: ''
+                };
+            }
+        },
+
+        getDaysInMonth(monthName) {
+            const currentYear = new Date().getFullYear();
+            const monthNumber = Object.keys(this.months).find(key =>
+                this.months[key].name === monthName
+            );
+
+            // Get the number of days in this month
+            const daysInMonth = new Date(currentYear, parseInt(monthNumber), 0).getDate();
+
+            const days = [];
+            for (let day = 1; day <= daysInMonth; day++) {
+                const dateValue = `${currentYear}-${monthNumber.toString().padStart(2, '0')}-${day.toString().padStart(2, '0')}`;
+                const dateLabel = `${monthName} ${day}, ${currentYear}`;
+                days.push({
+                    value: dateValue,
+                    label: dateLabel
+                });
+            }
+
+            return days;
+        },
         deleteExpense(expenseId) {
             console.log('Deleting expense with ID:', expenseId);
             axios.delete(`${this.$apiUrl}expenses`, {
@@ -264,7 +388,7 @@ export default {
             if (this.refreshInterval) {
                 clearInterval(this.refreshInterval);
             }
-            
+
             this.refreshInterval = setInterval(() => {
                 if (this.autoRefresh && this.isAuthenticated && this.groupID !== -1) {
                     console.log('Auto-refreshing expenses data...');
@@ -305,14 +429,14 @@ export default {
             }
 
             // Get the month number from month name
-            const monthNumber = Object.keys(this.months).find(key => 
+            const monthNumber = Object.keys(this.months).find(key =>
                 this.months[key].name === monthName
             );
 
             // Create date for the selected month (using first day of the month)
             const currentYear = new Date().getFullYear();
             const expenseDate = new Date(currentYear, parseInt(monthNumber), 1);
-            
+
             try {
                 const response = await axios.post(`${this.$apiUrl}expenses`, {
                     token: this.token,
@@ -331,13 +455,13 @@ export default {
                         category: '',
                         date: ''
                     };
-                    
+
                     // Close form
                     this.addExpense = null;
-                    
+
                     // Refresh expenses to show the new one
                     await this.getExpenses();
-                    
+
                     alert('Expense added successfully!');
                 }
             } catch (error) {
@@ -354,7 +478,7 @@ export default {
                 const response = await axios.post(`${this.$apiUrl}groups/get`, {
                     token: this.token,
                 });
-                
+
                 // The API returns the groups array directly, not nested under 'groups'
                 if (response.data && Array.isArray(response.data)) {
                     this.groups = response.data;
@@ -620,6 +744,28 @@ export default {
                 this.isLoading = false;
             });
         },
+        getMonthOptions() {
+            return Object.keys(this.months).map(key => ({
+                value: key,
+                label: this.months[key].name
+            }));
+        },
+        getYearOptions() {
+            const currentYear = new Date().getFullYear();
+            return Array.from({ length: 10 }, (_, i) => currentYear - i);
+        },
+        getDaysInEditMonth(month, year) {
+            if (!month || !year) return [];
+            const daysInMonth = new Date(year, month, 0).getDate();
+            return Array.from({ length: daysInMonth }, (_, i) => i + 1);
+        },
+        updateExpenseDate(expense) {
+            const { day, month, year } = this.editDate;
+            if (day && month && year) {
+                const date = new Date(year, month - 1, day);
+                expense.date = date.toISOString().split('T')[0]; // Update expense date
+            }
+        }
     }
 }
 </script>
@@ -690,7 +836,8 @@ export default {
     gap: 1rem;
 }
 
-.refresh-btn, .auto-refresh-btn {
+.refresh-btn,
+.auto-refresh-btn {
     background: #374151;
     color: #e5e7eb;
     border: none;
@@ -991,6 +1138,15 @@ export default {
 .month-header button:hover {
     background: #4338ca;
     transform: translateY(-1px);
+}
+
+.date-selectors {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.date-selectors select {
+    flex: 1;
 }
 
 @media (max-width: 768px) {
