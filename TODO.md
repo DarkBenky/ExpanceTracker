@@ -1,2 +1,4 @@
 - [ ] Add option to add group
 - [ ] Add option to remove group
+- [X] Remove Expense
+- [ ] Update Expense

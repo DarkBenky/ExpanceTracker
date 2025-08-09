@@ -33,7 +33,7 @@
             </div>
 
             <!-- Charts Section -->
-            <div v-if="showCharts" class="charts-section">
+            <div v-if="showCharts" class="charts-section" :key="'charts-'+groupRenderKey">
                 <div class="chart-container">
                     <h3>Monthly Expenses Trend</h3>
                     <canvas id="monthlyChart"></canvas>
@@ -46,7 +46,7 @@
 
             <!-- Monthly Breakdown -->
             <div class="months-grid">
-                <div v-for="month in this.months" :key="month.name" class="month-card">
+                <div v-for="month in months" :key="month.name + '-' + groupRenderKey" class="month-card">
 
                     <div class="month-header">
                         <h3>{{ month.name }}</h3>
@@ -107,6 +107,30 @@
                                     <span class="expense-category">{{ expense.category }}</span>
                                     <span class="expense-date">{{ formatDate(expense.date) }}</span>
                                 </div>
+                                <button @click="deleteExpense(expense.id)">Delete Expense</button>
+                                <button v-if="editExpenseId !== expense.id" @click="editExpenseId = expense.id">Edit Expense</button>
+                                <button v-else @click="editExpenseId = null">Cancel Edit</button>
+                                <form v-if="this.editExpenseId == expense.id">
+                                    <div class="input-group">
+                                        <label for="editDescription">Description</label>
+                                        <input type="text" v-model="expense.description" required />
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="editAmount">Amount</label>
+                                        <input type="number" step="0.01" v-model.number="expense.amount" required />
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="editCategory">Category</label>
+                                        <select v-model="expense.category" required>
+                                            <option value="" disabled>Select Category</option>
+                                            <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-buttons">
+                                        <button type="submit" @click.prevent="updateExpense(expense)" class="btn btn-primary">Update Expense</button>
+                                        <button type="button" @click="this.editExpenseId = null" class="btn btn-secondary">Cancel</button>
+                                    </div>
+                                </form>
                             </div>
                         </div>
                     </div>
@@ -140,6 +164,7 @@ export default {
                 11: { name: 'November', expenses: [], total: 0, byCategory: {} },
                 12: { name: 'December', expenses: [], total: 0, byCategory: {} },
             },
+            editExpenseId: null,
             groups: [],
             groupID: -1,
             expenses: [],
@@ -172,6 +197,7 @@ export default {
             ],
             isLoading: false,
             errorMessage: '',
+            groupRenderKey: 0, // force canvas re-mount on group change
         }
     },
     async created() {
@@ -183,12 +209,14 @@ export default {
         }
     },
     beforeUnmount() {
-        // Clean up the interval when component is destroyed
         this.stopPeriodicRefresh();
+        this.destroyAllCharts();
     },
     watch: {
         groupID(newGroupId) {
             if (newGroupId !== -1 && this.isAuthenticated) {
+                this.destroyAllCharts();
+                this.groupRenderKey++; // force fresh canvases
                 this.getExpenses();
             }
         },
@@ -201,6 +229,37 @@ export default {
         }
     },
     methods: {
+        deleteExpense(expenseId) {
+            console.log('Deleting expense with ID:', expenseId);
+            axios.delete(`${this.$apiUrl}expenses`, {
+                headers: { 'Content-Type': 'application/json' },
+                data: {
+                    token: this.token,
+                    group_id: this.groupID,
+                    expense_id: expenseId
+                }
+            }).then(response => {
+                if (response.status === 200) {
+                    this.getExpenses();
+                }
+            }).catch(error => {
+                console.error('Error deleting expense:', error?.response?.data || error);
+            });
+        },
+        destroyAllCharts() {
+            if (this.monthlyChart && typeof this.monthlyChart.destroy === 'function') {
+                this.monthlyChart.destroy();
+                this.monthlyChart = null;
+            }
+            if (this.categoryChart && typeof this.categoryChart.destroy === 'function') {
+                this.categoryChart.destroy();
+                this.categoryChart = null;
+            }
+            Object.values(this.monthCharts).forEach(c => {
+                if (c && typeof c.destroy === 'function') c.destroy();
+            });
+            this.monthCharts = {};
+        },
         startPeriodicRefresh() {
             if (this.refreshInterval) {
                 clearInterval(this.refreshInterval);
@@ -369,20 +428,14 @@ export default {
         toggleCharts() {
             this.showCharts = !this.showCharts;
             if (this.showCharts) {
+                this.groupRenderKey++; // remount canvases when showing again
                 this.$nextTick(() => {
                     this.createMonthlyChart();
                     this.createCategoryChart();
+                    this.createMonthlyPieCharts();
                 });
             } else {
-                // Destroy charts when hiding to free memory
-                if (this.monthlyChart) {
-                    this.monthlyChart.destroy();
-                    this.monthlyChart = null;
-                }
-                if (this.categoryChart) {
-                    this.categoryChart.destroy();
-                    this.categoryChart = null;
-                }
+                this.destroyAllCharts();
             }
         },
         calculateRegressionLine(data) {
@@ -410,18 +463,16 @@ export default {
             });
         },
         createMonthlyChart() {
-            const ctx = document.getElementById('monthlyChart');
-            if (!ctx) return;
-
-            if (this.monthlyChart) {
-                this.monthlyChart.destroy();
-            }
+            if (!this.showCharts) return;
+            const canvas = document.getElementById('monthlyChart');
+            if (!canvas) return;
+            if (this.monthlyChart) this.monthlyChart.destroy();
 
             const monthlyData = Object.values(this.months).map(month => month.total);
             const monthLabels = Object.values(this.months).map(month => month.name);
             const regressionData = this.calculateRegressionLine(monthlyData);
 
-            this.monthlyChart = new Chart(ctx, {
+            this.monthlyChart = new Chart(canvas, {
                 type: 'bar',
                 data: {
                     labels: monthLabels,
@@ -466,12 +517,10 @@ export default {
             });
         },
         createCategoryChart() {
-            const ctx = document.getElementById('categoryChart');
-            if (!ctx) return;
-
-            if (this.categoryChart) {
-                this.categoryChart.destroy();
-            }
+            if (!this.showCharts) return;
+            const canvas = document.getElementById('categoryChart');
+            if (!canvas) return;
+            if (this.categoryChart) this.categoryChart.destroy();
 
             const categoryTotals = {};
             Object.values(this.months).forEach(month => {
@@ -482,7 +531,7 @@ export default {
 
             const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#8b5cf6', '#ec4899'];
 
-            this.categoryChart = new Chart(ctx, {
+            this.categoryChart = new Chart(canvas, {
                 type: 'doughnut',
                 data: {
                     labels: Object.keys(categoryTotals),
@@ -548,20 +597,22 @@ export default {
         getExpenses() {
             this.isLoading = true;
             this.errorMessage = '';
-
             axios.post(`${this.$apiUrl}expenses/get`, {
                 token: this.token,
                 group_id: this.groupID,
-            }
-            ).then(response => {
+            }).then(response => {
                 this.expenses = response.data;
                 this.sortExpensesByMonth();
                 this.calculateTotalByMonth();
                 this.calculateExpensesByCategory();
                 this.$nextTick(() => {
-                    this.createCharts();
+                    // canvases just remounted due to groupRenderKey increment
+                    if (this.showCharts) {
+                        this.createMonthlyChart();
+                        this.createCategoryChart();
+                    }
+                    this.createMonthlyPieCharts();
                 });
-                console.log("Expenses fetched and sorted by month:", this.months);
                 this.isLoading = false;
             }).catch(error => {
                 console.error("Error fetching expenses:", error);

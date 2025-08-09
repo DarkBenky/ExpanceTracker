@@ -236,11 +236,6 @@ func AddExpense(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"message": "Expense added successfully"})
 }
 
-type removeExpenseRequest struct {
-	Token     string `json:"token"`      // JWT token for authentication
-	GroupID   int    `json:"group_id"`   // ID of the group to which the expense belongs
-	ExpenseID int    `json:"expense_id"` // ID of the expense to be removed
-}
 
 func checkExpenseExists(expenseID int) (bool, error) {
 	var exists bool
@@ -251,53 +246,71 @@ func checkExpenseExists(expenseID int) (bool, error) {
 	return exists, nil
 }
 
+type removeExpenseRequest struct {
+	Token     string `json:"token"`      // JWT token for authentication
+	GroupID   int    `json:"group_id"`   // ID of the group to which the expense belongs
+	ExpenseID int    `json:"expense_id"` // ID of the expense to be removed
+}
+
+
 func RemoveExpense(c echo.Context) error {
+	fmt.Println("RemoveExpense called")
 	var req removeExpenseRequest
 	if err := c.Bind(&req); err != nil {
+		fmt.Println("Error binding request:", err)
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
 	}
 
 	// Validate required fields
 	if req.ExpenseID <= 0 || req.GroupID <= 0 {
+		fmt.Println("Invalid request: Expense ID and Group ID are required")
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Expense ID and Group ID are required"})
 	}
 
 	// Validate JWT token and get user ID
 	userID, err := validateToken(req.Token)
 	if err != nil {
+		fmt.Println("Error validating token:", err)
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
 	}
 
 	// check if the user exists
 	exists, err := userExists(userID)
 	if err != nil {
+		fmt.Println("Error checking user existence:", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
 	}
 	if !exists {
+		fmt.Println("User not found")
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "User not found"})
 	}
 
 	// Check if the user is part of the group
 	isMember, err := isUserInGroup(userID, req.GroupID)
 	if err != nil {
+		fmt.Println("Error checking group membership:", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
 	}
 	if !isMember {
+		fmt.Println("User is not part of the group")
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "User is not part of the group"})
 	}
 
 	// Check if the expense exists
 	exists, err = checkExpenseExists(req.ExpenseID)
 	if err != nil {
+		fmt.Println("Error checking expense existence:", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
 	}
 	if !exists {
+		fmt.Println("Expense not found")
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "Expense not found"})
 	}
 
 	// Delete the expense from the database
 	_, err = db.Exec(`DELETE FROM expenses WHERE id = ?`, req.ExpenseID)
 	if err != nil {
+		fmt.Println("Error deleting expense:", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to remove expense"})
 	}
 
