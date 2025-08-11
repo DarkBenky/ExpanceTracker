@@ -933,24 +933,38 @@ func main() {
 	initDB()
 	defer db.Close()
 
-	// Populate fake data if database is empty
-	if err := populateFakeData(); err != nil {
-		log.Printf("Error populating fake data: %v", err)
-	}
+	// // Populate fake data if database is empty
+	// if err := populateFakeData(); err != nil {
+	// 	log.Printf("Error populating fake data: %v", err)
+	// }
 
 	e := echo.New()
 
-	// Add CORS middleware
-	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: []string{
-			"http://localhost:3000", 
-			"http://localhost:5173", 
-			"http://localhost:8080",
-			"http://localhost:9876",  // Add your production port
-		},
-		AllowMethods: []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete},
-		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
-	}))
+	// Add CORS middleware with more permissive settings
+    e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+        AllowOrigins: []string{
+            "*", // Allow all origins for development
+        },
+        AllowMethods: []string{
+            http.MethodGet, 
+            http.MethodPost, 
+            http.MethodPut, 
+            http.MethodDelete, 
+            http.MethodOptions,
+        },
+        AllowHeaders: []string{
+            echo.HeaderOrigin, 
+            echo.HeaderContentType, 
+            echo.HeaderAccept, 
+            echo.HeaderAuthorization,
+            "X-Requested-With",
+            "Access-Control-Allow-Origin",
+        },
+        AllowCredentials: true,
+    }))
+
+    // Add logging middleware to see requests
+    e.Use(middleware.Logger())
 
 	// Routes
 	e.GET("/ping", Ping)
