@@ -925,6 +925,10 @@ func GetUsers(c echo.Context) error {
 	return c.JSON(http.StatusOK, users)
 }
 
+func Ping(c echo.Context) error {
+	return c.String(http.StatusOK, "pong")
+}
+
 func main() {
 	initDB()
 	defer db.Close()
@@ -944,6 +948,7 @@ func main() {
 	}))
 
 	// Routes
+	e.GET("/ping", Ping)
 	e.POST("/register", Register)
 	e.POST("/login", Login)
 	e.POST("/expenses", AddExpense)
