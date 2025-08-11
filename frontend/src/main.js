@@ -3,8 +3,12 @@ import App from './App.vue'
 
 const app = createApp(App)
 
-// Add global properties
-app.config.globalProperties.$apiUrl = 'http://localhost:1234/'
+// Use environment variable for API URL
+const apiUrl = process.env.VUE_APP_API_URL || 'http://localhost:1234/'
+app.config.globalProperties.$apiUrl = apiUrl
+
+console.log('API URL:', apiUrl)
+console.log('NODE_ENV:', process.env.NODE_ENV)
 
 // Disable development tools and console logs in production
 if (process.env.NODE_ENV === 'production') {
