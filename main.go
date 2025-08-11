@@ -942,7 +942,12 @@ func main() {
 
 	// Add CORS middleware
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins: []string{"http://localhost:3000", "http://localhost:5173", "http://localhost:8080"},
+		AllowOrigins: []string{
+			"http://localhost:3000", 
+			"http://localhost:5173", 
+			"http://localhost:8080",
+			"http://localhost:9876",  // Add your production port
+		},
 		AllowMethods: []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete},
 		AllowHeaders: []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAccept, echo.HeaderAuthorization},
 	}))
