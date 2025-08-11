@@ -3,4 +3,5 @@
 - [X] Show Group Members
 - [X] Remove Expense
 - [X] Update Expense
-- [ ] Add category
+- [ ] Add category (not for now)
+- [ ] deploy
