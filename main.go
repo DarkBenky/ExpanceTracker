@@ -827,6 +827,104 @@ func populateFakeData() error {
 	return nil
 }
 
+type GetGroupMembersRequest struct {
+    Token   string `json:"token"`    // JWT token for authentication
+    GroupID int    `json:"group_id"` // ID of the group to get members for
+}
+
+func GetGroupMembers(c echo.Context) error {
+    var req GetGroupMembersRequest
+    if err := c.Bind(&req); err != nil {
+        return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+    }
+
+    // Validate JWT token
+    userID, err := validateToken(req.Token)
+    if err != nil {
+        return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
+    }
+
+    // Check if user is member of the group
+    isMember, err := isUserInGroup(userID, req.GroupID)
+    if err != nil {
+        return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+    }
+    if !isMember {
+        return c.JSON(http.StatusForbidden, map[string]string{"error": "User is not part of the group"})
+    }
+
+    // Get all users in the group
+    query := `SELECT u.id, u.username 
+              FROM users u 
+              INNER JOIN group_members gm ON u.id = gm.user_id 
+              WHERE gm.group_id = ?
+              ORDER BY u.username`
+
+    rows, err := db.Query(query, req.GroupID)
+    if err != nil {
+        return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+    }
+    defer rows.Close()
+
+    var users []struct {
+        ID       int    `json:"id"`
+        Username string `json:"username"`
+    }
+
+    for rows.Next() {
+        var user struct {
+            ID       int    `json:"id"`
+            Username string `json:"username"`
+        }
+        err := rows.Scan(&user.ID, &user.Username)
+        if err != nil {
+            return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+        }
+        users = append(users, user)
+    }
+
+    return c.JSON(http.StatusOK, map[string]interface{}{
+        "users": users,
+    })
+}
+
+func GetUsers(c echo.Context) error {
+	var req GetGroupsRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+	}
+
+	// Validate JWT token
+	validUserID, err := validateToken(req.Token)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
+	}
+
+	// Get all users
+	rows, err := db.Query("SELECT id, username FROM users WHERE id != ?", validUserID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+	defer rows.Close()
+
+	var users []User
+	for rows.Next() {
+		var user User
+		err := rows.Scan(&user.ID, &user.Username)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+		}
+		users = append(users, user)
+	}
+
+	if err := rows.Err(); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+
+	fmt.Println("Returning users:", users)
+	return c.JSON(http.StatusOK, users)
+}
+
 func main() {
 	initDB()
 	defer db.Close()
@@ -854,8 +952,10 @@ func main() {
 	e.DELETE("/expenses", RemoveExpense)
 	e.POST("/groups", CreateGroup)
 	e.POST("/groups/get", GetUserGroups)
-	e.POST("/groups/members", AddUserToGroup)
+	e.POST("/groups/members/get", GetGroupMembers)
+	e.POST("/groups/members/add", AddUserToGroup)
 	e.POST("/validate/token", ValidateUserToken)
+	e.POST("/users/get", GetUsers)
 
 	// Start server
 	log.Println("Server starting on :1234")

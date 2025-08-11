@@ -1,16 +1,60 @@
 <template>
     <div class="expenses-container">
         <div class="groups-section">
-            <h3>Groups</h3>
+            <div class="groups-header">
+                <h3>Groups</h3>
+                <button @click="createGroup = !createGroup" class="btn btn-primary">
+                    {{ createGroup ? 'Cancel' : 'Create Group' }}
+                </button>
+            </div>
+            <div v-if="createGroup == true" class="create-group-form">
+                <form @submit.prevent="createNewGroup" class="group-form">
+                    <div class="input-group">
+                        <input type="text" v-model="newGroupName" placeholder="Enter group name" required />
+                    </div>
+                    <div class="form-buttons">
+                        <button @click="addNewGroup(newGroupName)" type="submit" class="btn btn-primary">Create</button>
+                        <button type="button" @click="createGroup = false" class="btn btn-secondary">Cancel</button>
+                    </div>
+                </form>
+            </div>
             <div v-for="group in groups" :key="group.id" class="group-item">
                 <span>{{ group.name }}</span>
-                <button @click="groupID = group.id" :class="{ active: groupID === group.id }">
+                <button @click="selectGroup(group.id)" :class="{ active: groupID === group.id }">
                     {{ groupID === group.id ? 'Selected' : 'Select' }}
                 </button>
+                <div v-if="groupID === group.id">
+                    <div class="group-members">
+                        <p class="members-title">Members:</p>
+                        <ul v-if="users.length > 0" class="members-list">
+                            <li v-for="user in users" :key="user.id" class="member-item">
+                                <span class="member-avatar">{{ user.username.charAt(0).toUpperCase() }}</span>
+                                <span class="member-name">{{ user.username }}</span>
+                            </li>
+                        </ul>
+                        <p v-else class="no-members">No members found</p>
+                        <button @click="addMember = !addMember" class="btn btn-secondary add-member-btn">
+                            {{ addMember ? 'Cancel' : 'Add Member' }}
+                        </button>
+                        <div v-if="addMember" class="add-member-form">
+                            <div class="input-group">
+                                <select v-model="selectedUser" class="member-select">
+                                    <option value="" disabled>Select User</option>
+                                    <option v-for="user in this.usersNotInGroup()" :key="user.id" :value="user.id">{{
+                                        user.username }}
+                                    </option>
+                                </select>
+                            </div>
+                            <div class="form-buttons">
+                                <button @click="addUserToGroup" class="btn btn-primary">Add User</button>
+                                <button @click="addMember = false" class="btn btn-secondary">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <h2 class="title">Expenses Dashboard</h2>
         <div v-if="!isAuthenticated" class="auth-message">
             <p>Please log in to view your expenses.</p>
         </div>
@@ -49,34 +93,37 @@
                 <div v-for="month in months" :key="month.name + '-' + groupRenderKey" class="month-card">
 
                     <div class="month-header">
-                        <h3>{{ month.name }}</h3>
+                        <h3>{{ month.name }} </h3>
                         <span class="month-total">${{ month.total.toFixed(2) }}</span>
-                        <button v-if="addExpense != month.name" @click="selectForm(month.name)">Add Expense</button>
-                        <button v-else @click="selectForm(month.name)">Close Form</button>
-                        <div v-if="addExpense == month.name">
-                            <form @submit.prevent="addExpenseToMonth(month.name)">
-                                <div class="input-group">
-                                    <label for="description">Description</label>
-                                    <input type="text" v-model="newExpense.description" required />
-                                </div>
-                                <div class="input-group">
-                                    <label for="amount">Amount</label>
-                                    <input type="number" step="0.01" v-model.number="newExpense.amount" required />
-                                </div>
-                                <div class="input-group">
-                                    <label for="category">Category</label>
-                                    <select v-model="newExpense.category" required>
-                                        <option value="" disabled>Select Category</option>
-                                        <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
-                                    </select>
-                                </div>
-                                <div class="form-buttons">
-                                    <button type="submit" class="btn btn-primary">Add Expense</button>
-                                    <button type="button" @click="addExpense = null"
-                                        class="btn btn-secondary">Cancel</button>
-                                </div>
-                            </form>
-                        </div>
+                        <button v-if="addExpense != month.name" @click="selectForm(month.name)"
+                            class="btn btn-primary add-expense-btn">Add Expense</button>
+                        <button v-else @click="selectForm(month.name)" class="btn btn-secondary add-expense-btn">Close
+                            Form</button>
+                    </div>
+
+                    <div v-if="addExpense == month.name" class="add-expense-form">
+                        <form @submit.prevent="addExpenseToMonth(month.name)" class="expense-form">
+                            <div class="input-group">
+                                <label for="description">Description</label>
+                                <input type="text" v-model="newExpense.description" required />
+                            </div>
+                            <div class="input-group">
+                                <label for="amount">Amount</label>
+                                <input type="number" step="0.01" v-model.number="newExpense.amount" required />
+                            </div>
+                            <div class="input-group">
+                                <label for="category">Category</label>
+                                <select v-model="newExpense.category" required>
+                                    <option value="" disabled>Select Category</option>
+                                    <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+                                </select>
+                            </div>
+                            <div class="form-buttons">
+                                <button type="submit" class="btn btn-primary">Add Expense</button>
+                                <button type="button" @click="addExpense = null"
+                                    class="btn btn-secondary">Cancel</button>
+                            </div>
+                        </form>
                     </div>
 
                     <div v-if="month.expenses.length === 0" class="no-expenses">
@@ -108,11 +155,15 @@
                                     <span class="expense-category">{{ expense.category }}</span>
                                     <span class="expense-date">{{ formatDate(expense.date) }}</span>
                                 </div>
-                                <button @click="deleteExpense(expense.id)">Delete Expense</button>
-                                <button v-if="editExpenseId !== expense.id" @click="editExpenseId = expense.id">Edit
-                                    Expense</button>
-                                <button v-else @click="editExpenseId = null">Cancel Edit</button>
-                                <form v-if="this.editExpenseId == expense.id">
+                                <div class="expense-actions">
+                                    <button @click="deleteExpense(expense.id)"
+                                        class="btn btn-danger expense-action-btn">Delete</button>
+                                    <button v-if="editExpenseId !== expense.id" @click="editExpenseId = expense.id"
+                                        class="btn btn-secondary expense-action-btn">Edit</button>
+                                    <button v-else @click="editExpenseId = null"
+                                        class="btn btn-secondary expense-action-btn">Cancel</button>
+                                </div>
+                                <form v-if="this.editExpenseId == expense.id" class="edit-expense-form">
                                     <div class="input-group">
                                         <label for="editDescription">Description</label>
                                         <input type="text" v-model="expense.description" required />
@@ -196,6 +247,10 @@ export default {
                 11: { name: 'November', expenses: [], total: 0, byCategory: {} },
                 12: { name: 'December', expenses: [], total: 0, byCategory: {} },
             },
+            allUsers: [],
+            users: {},
+            addMember: false,
+            createGroup: false,
             editExpenseId: null,
             groups: [],
             groupID: -1,
@@ -222,15 +277,26 @@ export default {
                 year: ''
             },
             categories: [
-                'Food & Dining',
-                'Transportation',
-                'Shopping',
-                'Entertainment',
-                'Bills & Utilities',
-                'Healthcare',
-                'Travel',
-                'Education',
-                'Other'
+                'Jedlo - Food & Dining',
+                'Cestovanie - Transportation', 
+                'Nakupy - Shopping',
+                'Zabava - Entertainment',
+                'Účty a služby - Bills & Utilities',
+                'Zdravotníctvo - Healthcare',
+                'Cestovanie - Travel',
+                'Vzdelávanie - Education',
+                'Bývanie - Housing',
+                'Oblečenie - Clothing',
+                'Šport a fitness - Sports & Fitness',
+                'Darčeky - Gifts',
+                'Elektronika - Electronics',
+                'Automobil - Car & Transport',
+                'Investície - Investments',
+                'Poistenie - Insurance',
+                'Krása - Beauty & Personal Care',
+                'Domáce potreby - Household Items',
+                'Opravy - Repairs & Maintenance',
+                'Ostatné - Other'
             ],
             isLoading: false,
             errorMessage: '',
@@ -266,9 +332,84 @@ export default {
         }
     },
     methods: {
+        addNewGroup(groupName) {
+            if (!groupName) {
+                console.log('Please enter a group name');
+                return;
+            }
+            axios.post(`${this.$apiUrl}groups`, {
+                token: this.token,
+                name: groupName
+            }).then(response => {
+                if (response.status === 201) {
+                    this.createGroup = false;
+                    this.newGroupName = '';
+                    this.GetGroups();
+                    console.log('Group created successfully:', response.data);
+                }
+            }).catch(error => {
+                console.error('Error creating group:', error);
+                console.log('Failed to create group. Please try again.');
+            });
+        },
+        addUserToGroup() {
+            if (!this.selectedUser) {
+                console.log('Please select a user to add');
+                return;
+            }
+
+            axios.post(`${this.$apiUrl}groups/members/add`, {
+                token: this.token,
+                group_id: this.groupID,
+                user_id: this.selectedUser
+            }).then(response => {
+                if (response.status === 200) {
+                    this.getUsersFromGroup(this.groupID);
+                    this.selectedUser = null; // Reset selection
+                }
+            }).catch(error => {
+                console.error('Error adding user to group:', error);
+                console.log('Failed to add user to group. Please try again.');
+            });
+        },
+        usersNotInGroup() {
+            return this.allUsers.filter(user => !this.users.some(u => u.id === user.id));
+        },
+        async getAllUsers() {
+            axios.post(`${this.$apiUrl}users/get`, {
+                token: this.token
+            }).then(response => {
+                if (response.status === 200) {
+                    // Try accessing the data directly first
+                    this.allUsers = response.data || [];
+                    console.log('All users fetched:', this.allUsers);
+                    console.log('Full response data:', response.data);
+                }
+            }).catch(error => {
+                console.error('Error fetching all users:', error);
+            });
+        },
+        selectGroup(groupId) {
+            this.groupID = groupId;
+            this.getUsersFromGroup(groupId);
+        },
+        getUsersFromGroup(groupId) {
+            // Fetch users from the selected group
+            axios.post(`${this.$apiUrl}groups/members/get`, {
+                token: this.token,
+                group_id: groupId
+            }).then(response => {
+                if (response.status === 200) {
+                    this.users = response.data.users || [];
+                    console.log('Group users fetched:', this.users);
+                }
+            }).catch(error => {
+                console.error('Error fetching group users:', error);
+            });
+        },
         updateExpense(expense) {
             if (!expense.description || !expense.amount || !expense.category) {
-                alert('Please fill in all fields');
+                console.log('Please fill in all fields');
                 return;
             }
 
@@ -299,14 +440,14 @@ export default {
                         month: '',
                         year: ''
                     };
-                    alert('Expense updated successfully!');
+                    console.log('Expense updated successfully!');
                 }
             }).catch(error => {
                 console.error('Error updating expense:', error);
                 if (error.response && error.response.data && error.response.data.error) {
-                    alert('Error: ' + error.response.data.error);
+                    console.log('Error: ' + error.response.data.error);
                 } else {
-                    alert('Failed to update expense. Please try again.');
+                    console.log('Failed to update expense. Please try again.');
                 }
             });
         },
@@ -424,7 +565,7 @@ export default {
         },
         async addExpenseToMonth(monthName) {
             if (!this.newExpense.description || !this.newExpense.amount || !this.newExpense.category) {
-                alert('Please fill in all fields');
+                console.log('Please fill in all fields');
                 return;
             }
 
@@ -462,14 +603,14 @@ export default {
                     // Refresh expenses to show the new one
                     await this.getExpenses();
 
-                    alert('Expense added successfully!');
+                    console.log('Expense added successfully!');
                 }
             } catch (error) {
                 console.error('Error adding expense:', error);
                 if (error.response && error.response.data && error.response.data.error) {
-                    alert('Error: ' + error.response.data.error);
+                    console.log('Error: ' + error.response.data.error);
                 } else {
-                    alert('Failed to add expense. Please try again.');
+                    console.log('Failed to add expense. Please try again.');
                 }
             }
         },
@@ -729,6 +870,7 @@ export default {
                 this.sortExpensesByMonth();
                 this.calculateTotalByMonth();
                 this.calculateExpensesByCategory();
+                this.getAllUsers();
                 this.$nextTick(() => {
                     // canvases just remounted due to groupRenderKey increment
                     if (this.showCharts) {
@@ -1147,6 +1289,200 @@ export default {
 
 .date-selectors select {
     flex: 1;
+}
+
+/* Groups Section Styling */
+.groups-section {
+    background: #1f2937;
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
+    border: 1px solid #374151;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.groups-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.groups-header h3 {
+    color: #f9fafb;
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+}
+
+.create-group-form {
+    background: #374151;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    border: 1px solid #4b5563;
+}
+
+.group-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+/* Group Members Styling */
+.group-members {
+    margin-top: 1rem;
+    padding: 1rem;
+    background: #374151;
+    border-radius: 8px;
+    border: 1px solid #4b5563;
+}
+
+.members-title {
+    color: #d1d5db;
+    margin: 0 0 1rem 0;
+    font-weight: 600;
+}
+
+.members-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.member-item {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: #4b5563;
+    padding: 0.5rem 0.75rem;
+    border-radius: 20px;
+    color: #e5e7eb;
+}
+
+.member-avatar {
+    background: #6366f1;
+    color: white;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.member-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.no-members {
+    color: #9ca3af;
+    margin: 0 0 1rem 0;
+    font-style: italic;
+}
+
+.add-member-btn {
+    margin-bottom: 1rem;
+}
+
+.add-member-form {
+    background: #4b5563;
+    border-radius: 6px;
+    padding: 1rem;
+    border: 1px solid #6b7280;
+}
+
+.member-select {
+    width: 100%;
+    background: #374151;
+    border: 1px solid #6b7280;
+    border-radius: 6px;
+    padding: 0.75rem;
+    color: #e5e7eb;
+    font-size: 1rem;
+}
+
+.member-select:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+}
+
+/* Month Header Styling */
+.add-expense-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    margin-left: auto;
+}
+
+.add-expense-form {
+    width: 100%;
+    background: #374151;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-top: 1rem;
+    border: 1px solid #4b5563;
+}
+
+.expense-form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+/* Expense Actions Styling */
+.expense-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid #4b5563;
+}
+
+.expense-action-btn {
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    border-radius: 6px;
+    font-weight: 500;
+}
+
+.btn-danger {
+    background: #dc2626;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #b91c1c;
+    transform: translateY(-1px);
+}
+
+/* Edit Expense Form Styling */
+.edit-expense-form {
+    background: #374151;
+    border-radius: 8px;
+    padding: 1.5rem;
+    margin-top: 1rem;
+    border: 1px solid #4b5563;
+}
+
+/* Fix CSS errors */
+.title {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+
+.expenses-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
 }
 
 @media (max-width: 768px) {
