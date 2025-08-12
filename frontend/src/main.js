@@ -15,10 +15,10 @@ if (process.env.NODE_ENV === 'production') {
     app.config.performance = false
     app.config.devtools = false
     
-    // Disable console logs in production
-    console.log = () => {}
-    console.warn = () => {}
-    console.info = () => {}
+    // // Disable console logs in production
+    // console.log = () => {}
+    // console.warn = () => {}
+    // console.info = () => {}
 }
 
 app.mount('#app')
