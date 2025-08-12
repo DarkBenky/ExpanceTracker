@@ -308,6 +308,7 @@ export default {
         if (this.isAuthenticated) {
             this.getExpenses();
             this.GetGroups();
+            this.getAllUsers();
             this.startPeriodicRefresh();
         }
     },
