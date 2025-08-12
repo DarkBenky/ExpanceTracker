@@ -375,7 +375,7 @@ export default {
         usersNotInGroup() {
             return this.allUsers.filter(user => !this.users.some(u => u.id === user.id));
         },
-        async getAllUsers() {
+        getAllUsers() {
             axios.post(`${this.$apiUrl}users/get`, {
                 token: this.token
             }).then(response => {
