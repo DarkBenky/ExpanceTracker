@@ -606,12 +606,17 @@ export default {
                 this.months[key].name === monthName
             );
 
+            console.log('Month lookup:', { monthName, monthNumber, monthsObject: this.months });
+
             // Create date for the selected month (using first day of the month) with selected year
-            const expenseDate = new Date(this.selectedYear, parseInt(monthNumber) - 1, 1);
+            // monthNumber is a string like "1" for January, "2" for February, etc.
+            const monthIndex = parseInt(monthNumber) - 1; // Convert to 0-based index (0 for January, 1 for February, etc.)
+            const expenseDate = new Date(this.selectedYear, monthIndex, 1);
             
             console.log('Adding expense:', {
                 monthName,
                 monthNumber,
+                monthIndex,
                 selectedYear: this.selectedYear,
                 expenseDate: expenseDate.toISOString().split('T')[0],
                 description: this.newExpense.description,
