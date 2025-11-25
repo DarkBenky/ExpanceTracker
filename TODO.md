@@ -5,3 +5,4 @@
 - [X] Update Expense
 - [ ] Add category (not for now)
 - [ ] deploy
+- [ ] better UI
