@@ -19,7 +19,7 @@ sudo apt update
 sudo apt upgrade -y
 
 # Install required packages
-sudo apt install -y git curl nginx build-essential
+sudo apt install -y git curl build-essential tmux
 ```
 
 ---
@@ -96,7 +96,7 @@ ls -lh expensetracker
 
 ---
 
-## Step 6: Configure and Build the Frontend
+## Step 6: Configure and Install Frontend Dependencies
 
 ```bash
 # Navigate to frontend directory
@@ -105,98 +105,55 @@ cd ~/ExpanceTracker/frontend
 # Install dependencies
 npm install
 
-# Create production .env file
-cat > .env.production << EOF
-NODE_ENV=production
-VUE_APP_API_URL=http://YOUR_VM_IP:1234/
+# Create .env file for development server
+cat > .env << EOF
+NODE_ENV=development
+VUE_APP_API_URL=http://localhost:1234/
 EOF
-
-# Replace YOUR_VM_IP with your actual VM IP address
-# Example: VUE_APP_API_URL=http://192.168.1.100:1234/
-sed -i 's/YOUR_VM_IP/YOUR_ACTUAL_IP_HERE/g' .env.production
-
-# Build the frontend for production
-npm run build
-
-# Verify the build
-ls -lh dist/
 ```
 
 ---
 
-## Step 7: Configure Nginx for Frontend
+## Step 7: Run Backend in Tmux Session
 
 ```bash
-# Create nginx configuration file
-sudo tee /etc/nginx/sites-available/expensetracker << EOF
-server {
-    listen 8080;
-    server_name _;
+# Navigate to project root
+cd ~/ExpanceTracker
 
-    root /home/$(whoami)/ExpanceTracker/frontend/dist;
-    index index.html;
+# Create a new tmux session for backend
+tmux new-session -d -s backend
 
-    location / {
-        try_files \$uri \$uri/ /index.html;
-    }
+# Run the backend in the tmux session
+tmux send-keys -t backend './expensetracker' C-m
 
-    # Enable gzip compression
-    gzip on;
-    gzip_vary on;
-    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
-}
-EOF
+# Verify backend is running
+tmux list-sessions
 
-# Remove default nginx site
-sudo rm -f /etc/nginx/sites-enabled/default
-
-# Enable the expense tracker site
-sudo ln -s /etc/nginx/sites-available/expensetracker /etc/nginx/sites-enabled/
-
-# Test nginx configuration
-sudo nginx -t
-
-# Restart nginx
-sudo systemctl restart nginx
-
-# Enable nginx to start on boot
-sudo systemctl enable nginx
+# (Optional) Attach to see backend logs
+# tmux attach -t backend
+# Press Ctrl+B then D to detach
 ```
 
 ---
 
-## Step 8: Create Systemd Service for Backend
+## Step 8: Run Frontend in Tmux Session
 
 ```bash
-# Create systemd service file for the backend
-sudo tee /etc/systemd/system/expensetracker.service << EOF
-[Unit]
-Description=Expense Tracker Backend API
-After=network.target
+# Navigate to frontend directory
+cd ~/ExpanceTracker/frontend
 
-[Service]
-Type=simple
-User=$(whoami)
-WorkingDirectory=/home/$(whoami)/ExpanceTracker
-ExecStart=/home/$(whoami)/ExpanceTracker/expensetracker
-Restart=always
-RestartSec=10
+# Create a new tmux session for frontend
+tmux new-session -d -s frontend
 
-[Install]
-WantedBy=multi-user.target
-EOF
+# Run the frontend dev server in the tmux session
+tmux send-keys -t frontend 'npm run serve' C-m
 
-# Reload systemd daemon
-sudo systemctl daemon-reload
+# Verify frontend is running
+tmux list-sessions
 
-# Start the backend service
-sudo systemctl start expensetracker
-
-# Enable the service to start on boot
-sudo systemctl enable expensetracker
-
-# Check service status
-sudo systemctl status expensetracker
+# (Optional) Attach to see frontend logs
+# tmux attach -t frontend
+# Press Ctrl+B then D to detach
 ```
 
 ---
@@ -234,12 +191,16 @@ curl http://localhost:1234/
 # Check if frontend is accessible
 curl http://localhost:8080/
 
-# Check backend service logs
-sudo journalctl -u expensetracker -f
+# List all tmux sessions
+tmux list-sessions
 
-# Check nginx logs
-sudo tail -f /var/log/nginx/access.log
-sudo tail -f /var/log/nginx/error.log
+# Attach to backend session to see logs
+tmux attach -t backend
+# Press Ctrl+B then D to detach
+
+# Attach to frontend session to see logs
+tmux attach -t frontend
+# Press Ctrl+B then D to detach
 ```
 
 ---
@@ -248,49 +209,50 @@ sudo tail -f /var/log/nginx/error.log
 
 Once deployed, you can access the application:
 
-- **Frontend**: `http://YOUR_VM_IP:8080`
-- **Backend API**: `http://YOUR_VM_IP:1234`
-
-Replace `YOUR_VM_IP` with your VM's actual IP address.
+- **Frontend**: `http://91.98.145.193:8080`
+- **Backend API**: `http://91.98.145.193:1234`
 
 ---
 
 ## Useful Management Commands
 
-### Backend Service Management
+### Tmux Session Management
 ```bash
-# Start the backend
-sudo systemctl start expensetracker
+# List all tmux sessions
+tmux list-sessions
 
-# Stop the backend
-sudo systemctl stop expensetracker
+# Attach to backend session
+tmux attach -t backend
 
-# Restart the backend
-sudo systemctl restart expensetracker
+# Attach to frontend session
+tmux attach -t frontend
 
-# View backend logs
-sudo journalctl -u expensetracker -n 100 --no-pager
+# Detach from session (while inside tmux)
+# Press: Ctrl+B then D
 
-# Follow backend logs in real-time
-sudo journalctl -u expensetracker -f
+# Kill backend session
+tmux kill-session -t backend
+
+# Kill frontend session
+tmux kill-session -t frontend
+
+# Kill all sessions
+tmux kill-server
 ```
 
-### Nginx Management
+### Restart Services
 ```bash
-# Start nginx
-sudo systemctl start nginx
+# Restart backend
+tmux kill-session -t backend
+cd ~/ExpanceTracker
+tmux new-session -d -s backend
+tmux send-keys -t backend './expensetracker' C-m
 
-# Stop nginx
-sudo systemctl stop nginx
-
-# Restart nginx
-sudo systemctl restart nginx
-
-# Reload nginx (without dropping connections)
-sudo systemctl reload nginx
-
-# Test nginx configuration
-sudo nginx -t
+# Restart frontend
+tmux kill-session -t frontend
+cd ~/ExpanceTracker/frontend
+tmux new-session -d -s frontend
+tmux send-keys -t frontend 'npm run serve' C-m
 ```
 
 ### Update Application
@@ -304,15 +266,21 @@ git pull
 # Rebuild backend
 go build -o expensetracker main.go
 
-# Rebuild frontend
+# Update frontend dependencies if needed
 cd frontend
 npm install
-npm run build
 cd ..
 
-# Restart services
-sudo systemctl restart expensetracker
-sudo systemctl restart nginx
+# Restart backend
+tmux kill-session -t backend
+tmux new-session -d -s backend
+tmux send-keys -t backend './expensetracker' C-m
+
+# Restart frontend
+tmux kill-session -t frontend
+cd frontend
+tmux new-session -d -s frontend
+tmux send-keys -t frontend 'npm run serve' C-m
 ```
 
 ---
@@ -321,26 +289,34 @@ sudo systemctl restart nginx
 
 ### Backend not starting
 ```bash
-# Check service status
-sudo systemctl status expensetracker
+# Check if backend tmux session exists
+tmux list-sessions | grep backend
 
-# View detailed logs
-sudo journalctl -u expensetracker -n 50 --no-pager
+# Attach to backend session to see errors
+tmux attach -t backend
 
 # Check if port 1234 is in use
 sudo netstat -tulpn | grep 1234
+
+# Manually run backend to see errors
+cd ~/ExpanceTracker
+./expensetracker
 ```
 
 ### Frontend not accessible
 ```bash
-# Check nginx status
-sudo systemctl status nginx
+# Check if frontend tmux session exists
+tmux list-sessions | grep frontend
 
-# Verify nginx configuration
-sudo nginx -t
+# Attach to frontend session to see errors
+tmux attach -t frontend
 
-# Check nginx error logs
-sudo tail -n 50 /var/log/nginx/error.log
+# Check if port 8080 is in use
+sudo netstat -tulpn | grep 8080
+
+# Manually run frontend to see errors
+cd ~/ExpanceTracker/frontend
+npm run serve
 ```
 
 ### Database issues
@@ -368,28 +344,13 @@ sudo ufw status numbered
 
 ## Security Recommendations
 
-1. **Use HTTPS**: Set up SSL certificates with Let's Encrypt
-2. **Change default ports**: Consider using non-standard ports
-3. **Enable firewall**: Ensure UFW or iptables is properly configured
-4. **Regular updates**: Keep system and dependencies updated
-5. **Backup database**: Regularly backup `expenses.db`
-6. **Use environment variables**: Store sensitive configuration in env files
-7. **Restrict SSH**: Use key-based authentication and disable password login
-
----
-
-## Optional: Setup HTTPS with Let's Encrypt
-
-```bash
-# Install Certbot
-sudo apt install -y certbot python3-certbot-nginx
-
-# Obtain SSL certificate (replace YOUR_DOMAIN with your actual domain)
-sudo certbot --nginx -d YOUR_DOMAIN
-
-# Auto-renewal test
-sudo certbot renew --dry-run
-```
+1. **Enable firewall**: Ensure UFW or iptables is properly configured
+2. **Regular updates**: Keep system and dependencies updated
+3. **Backup database**: Regularly backup `expenses.db`
+4. **Use environment variables**: Store sensitive configuration in env files
+5. **Restrict SSH**: Use key-based authentication and disable password login
+6. **Monitor tmux sessions**: Regularly check that both services are running
+7. **Use screen or tmux with auto-restart**: Consider adding auto-restart logic
 
 ---
 
@@ -422,17 +383,34 @@ sudo systemctl restart expensetracker
 
 - The database file (`expenses.db`) is created automatically on first run
 - Default backend port is 1234 (can be changed in the Go code)
-- Default frontend port is 8080 (configured in nginx)
-- All logs are available via `journalctl` for the backend service
-- Nginx logs are in `/var/log/nginx/`
+- Default frontend port is 8080 (configured in Vue.js dev server)
+- Both services run in separate tmux sessions for easy management
+- Tmux sessions persist even after you logout (unless you kill them or reboot)
+- To see logs, attach to the respective tmux session
 
 ## Support
 
-For issues or questions, check the logs first:
+For issues or questions, check the logs by attaching to tmux sessions:
+
 ```bash
 # Backend logs
-sudo journalctl -u expensetracker -f
+tmux attach -t backend
+# Press Ctrl+B then D to detach
 
-# Nginx logs
-sudo tail -f /var/log/nginx/error.log
+# Frontend logs
+tmux attach -t frontend
+# Press Ctrl+B then D to detach
+```
+
+## Auto-Start on Reboot (Optional)
+
+To automatically start both services after a system reboot, add to crontab:
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add these lines:
+@reboot sleep 10 && cd /home/$(whoami)/ExpanceTracker && tmux new-session -d -s backend './expensetracker'
+@reboot sleep 15 && cd /home/$(whoami)/ExpanceTracker/frontend && tmux new-session -d -s frontend 'npm run serve'
 ```
