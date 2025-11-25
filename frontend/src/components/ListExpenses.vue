@@ -61,6 +61,12 @@
         <div v-else class="dashboard">
             <!-- Controls -->
             <div class="controls">
+                <div class="year-selector">
+                    <label for="year-select">Year:</label>
+                    <select id="year-select" v-model="selectedYear" @change="onYearChange" class="year-select">
+                        <option v-for="year in availableYears" :key="year" :value="year">{{ year }}</option>
+                    </select>
+                </div>
                 <div class="chart-controls">
                     <button @click="toggleCharts" class="toggle-btn">
                         {{ showCharts ? 'Hide Charts' : 'Show Charts' }}
@@ -317,9 +323,17 @@ export default {
             isLoading: false,
             errorMessage: '',
             groupRenderKey: 0, // force canvas re-mount on group change
+            selectedYear: new Date().getFullYear(),
+            availableYears: [],
         }
     },
     async created() {
+        // Initialize available years (last 5 years and next year)
+        const currentYear = new Date().getFullYear();
+        for (let i = currentYear - 5; i <= currentYear + 1; i++) {
+            this.availableYears.push(i);
+        }
+        
         await this.checkExistingToken();
         if (this.isAuthenticated) {
             this.getExpenses();
@@ -591,9 +605,8 @@ export default {
                 this.months[key].name === monthName
             );
 
-            // Create date for the selected month (using first day of the month)
-            const currentYear = new Date().getFullYear();
-            const expenseDate = new Date(currentYear, parseInt(monthNumber), 1);
+            // Create date for the selected month (using first day of the month) with selected year
+            const expenseDate = new Date(this.selectedYear, parseInt(monthNumber) - 1, 1);
 
             try {
                 const response = await axios.post(`${this.$apiUrl}expenses`, {
@@ -653,12 +666,18 @@ export default {
             Object.values(this.months).forEach(month => month.expenses = []);
 
             for (const expense of this.expenses) {
-                const month = new Date(expense.date).getMonth() + 1; // getMonth() returns 0-11
-                console.log("Sorting expense:", expense, "into month:", month);
-                if (this.months[month]) {
-                    this.months[month].expenses.push(expense);
+                const expenseDate = new Date(expense.date);
+                const expenseYear = expenseDate.getFullYear();
+                
+                // Only show expenses from the selected year
+                if (expenseYear === this.selectedYear) {
+                    const month = expenseDate.getMonth() + 1; // getMonth() returns 0-11
+                    console.log("Sorting expense:", expense, "into month:", month);
+                    if (this.months[month]) {
+                        this.months[month].expenses.push(expense);
+                    }
+                    console.log(this.months[month].expenses);
                 }
-                console.log(this.months[month].expenses);
             }
         },
         calculateTotalByMonth() {
@@ -936,6 +955,21 @@ export default {
         toggleExpenseList(monthName) {
             // Vue 3 way: direct assignment with reactive properties
             this.expandedExpenseLists[monthName] = !this.expandedExpenseLists[monthName];
+        },
+        onYearChange() {
+            // When year changes, re-process the expenses
+            this.sortExpensesByMonth();
+            this.calculateTotalByMonth();
+            this.calculateExpensesByCategory();
+            this.destroyAllCharts();
+            this.groupRenderKey++;
+            this.$nextTick(() => {
+                if (this.showCharts) {
+                    this.createMonthlyChart();
+                    this.createCategoryChart();
+                }
+                this.createMonthlyPieCharts();
+            });
         }
     }
 }
@@ -979,6 +1013,43 @@ export default {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 2rem;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.year-selector {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.year-selector label {
+    color: #e5e7eb;
+    font-weight: 600;
+    font-size: 1rem;
+}
+
+.year-select {
+    background: #374151;
+    color: #e5e7eb;
+    border: 2px solid #4b5563;
+    border-radius: 8px;
+    padding: 0.75rem 1.5rem;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.year-select:hover {
+    border-color: #6366f1;
+    background: #4b5563;
+}
+
+.year-select:focus {
+    outline: none;
+    border-color: #6366f1;
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
 }
 
 .chart-controls {
