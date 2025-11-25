@@ -162,25 +162,21 @@
                                             </div>
                                         </div>
                                         
-                                        <!-- Always show basic details, only hide actions/edit form -->
-                                        <div class="expense-details-always">
-                                            <div class="expense-meta">
-                                                <span class="expense-category">{{ expense.category }}</span>
-                                                <span class="expense-date">{{ formatDate(expense.date) }}</span>
-                                            </div>
-                                        </div>
-                                        
                                         <transition name="slide-fade">
                                             <div v-if="isExpenseExpanded(expense.id)" class="expense-details">
+                                                <div class="expense-meta">
+                                                    <span class="expense-category">{{ expense.category }}</span>
+                                                    <span class="expense-date">{{ formatDate(expense.date) }}</span>
+                                                </div>
                                                 <div class="expense-actions">
-                                                    <button @click="deleteExpense(expense.id)"
+                                                    <button @click.stop="deleteExpense(expense.id)"
                                                         class="btn btn-danger expense-action-btn">Delete</button>
-                                                    <button v-if="editExpenseId !== expense.id" @click="editExpenseId = expense.id"
+                                                    <button v-if="editExpenseId !== expense.id" @click.stop="editExpenseId = expense.id"
                                                         class="btn btn-secondary expense-action-btn">Edit</button>
-                                                    <button v-else @click="editExpenseId = null"
+                                                    <button v-else @click.stop="editExpenseId = null"
                                                         class="btn btn-secondary expense-action-btn">Cancel</button>
                                                 </div>
-                                                <form v-if="this.editExpenseId == expense.id" class="edit-expense-form">
+                                                <form v-if="this.editExpenseId == expense.id" @click.stop class="edit-expense-form">
                                                     <div class="input-group">
                                                         <label for="editDescription">Description</label>
                                                         <input type="text" v-model="expense.description" required />
@@ -1276,13 +1272,7 @@ export default {
 
 .expense-details {
     padding: 0 1rem 1rem 1rem;
-    border-top: 1px solid #4b5563;
-    margin-top: 0.5rem;
     padding-top: 0.75rem;
-}
-
-.expense-details-always {
-    padding: 0.5rem 1rem 0 2.5rem;
 }
 
 .expense-meta {
