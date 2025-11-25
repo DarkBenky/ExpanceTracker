@@ -936,7 +936,8 @@ export default {
             }
         },
         toggleExpenseList(monthName) {
-            this.$set(this.expandedExpenseLists, monthName, !this.expandedExpenseLists[monthName]);
+            // Vue 3 way: direct assignment with reactive properties
+            this.expandedExpenseLists[monthName] = !this.expandedExpenseLists[monthName];
         }
     }
 }
