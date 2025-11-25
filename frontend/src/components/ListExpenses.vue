@@ -634,6 +634,11 @@ export default {
                     await this.getExpenses();
 
                     console.log('Expense added successfully!');
+                    
+                    // Show a message if the expense was added to a different year
+                    if (expenseDate.getFullYear() !== this.selectedYear) {
+                        alert(`Expense added to ${monthName} ${expenseDate.getFullYear()}. Switch to year ${expenseDate.getFullYear()} to view it.`);
+                    }
                 }
             } catch (error) {
                 console.error('Error adding expense:', error);
@@ -672,13 +677,15 @@ export default {
                 // Only show expenses from the selected year
                 if (expenseYear === this.selectedYear) {
                     const month = expenseDate.getMonth() + 1; // getMonth() returns 0-11
-                    console.log("Sorting expense:", expense, "into month:", month);
+                    console.log("Sorting expense:", expense, "into month:", month, "for year:", expenseYear);
                     if (this.months[month]) {
                         this.months[month].expenses.push(expense);
                     }
-                    console.log(this.months[month].expenses);
+                } else {
+                    console.log("Skipping expense from year:", expenseYear, "Selected year:", this.selectedYear);
                 }
             }
+            console.log("Total expenses loaded:", this.expenses.length, "Selected year:", this.selectedYear);
         },
         calculateTotalByMonth() {
             Object.keys(this.months).forEach(month => {
@@ -855,43 +862,68 @@ export default {
         },
         createMonthlyPieCharts() {
             // Destroy existing month charts
-            Object.values(this.monthCharts).forEach(chart => chart.destroy());
+            Object.values(this.monthCharts).forEach(chart => {
+                if (chart && typeof chart.destroy === 'function') {
+                    chart.destroy();
+                }
+            });
             this.monthCharts = {};
 
             Object.values(this.months).forEach(month => {
-                if (month.expenses.length > 0) {
+                if (month.expenses.length > 0 && month.expanded) {
                     this.$nextTick(() => {
-                        const ctx = document.getElementById(`monthChart${month.name}`);
-                        if (ctx) {
-                            const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#8b5cf6', '#ec4899'];
-
-                            this.monthCharts[month.name] = new Chart(ctx, {
-                                type: 'pie',
-                                data: {
-                                    labels: Object.keys(month.byCategory),
-                                    datasets: [{
-                                        data: Object.values(month.byCategory),
-                                        backgroundColor: colors,
-                                        borderColor: '#1f2937',
-                                        borderWidth: 2
-                                    }]
-                                },
-                                options: {
-                                    responsive: true,
-                                    maintainAspectRatio: false,
-                                    plugins: {
-                                        legend: {
-                                            position: 'bottom',
-                                            labels: {
-                                                color: '#e5e7eb',
-                                                font: { size: 10 }
-                                            }
-                                        }
-                                    }
-                                }
-                            });
-                        }
+                        this.createMonthPieChart(month.name);
                     });
+                }
+            });
+        },
+        createMonthPieChart(monthName) {
+            const ctx = document.getElementById(`monthChart${monthName}`);
+            if (!ctx) {
+                console.log(`Canvas not found for ${monthName}`);
+                return;
+            }
+
+            // Destroy existing chart if it exists
+            if (this.monthCharts[monthName]) {
+                this.monthCharts[monthName].destroy();
+            }
+
+            const monthKey = Object.keys(this.months).find(key =>
+                this.months[key].name === monthName
+            );
+            const month = this.months[monthKey];
+
+            if (!month || !month.byCategory || Object.keys(month.byCategory).length === 0) {
+                console.log(`No category data for ${monthName}`);
+                return;
+            }
+
+            const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#8b5cf6', '#ec4899'];
+
+            this.monthCharts[monthName] = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: Object.keys(month.byCategory),
+                    datasets: [{
+                        data: Object.values(month.byCategory),
+                        backgroundColor: colors,
+                        borderColor: '#1f2937',
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'bottom',
+                            labels: {
+                                color: '#e5e7eb',
+                                font: { size: 10 }
+                            }
+                        }
+                    }
                 }
             });
         },
@@ -950,6 +982,13 @@ export default {
             );
             if (monthKey) {
                 this.months[monthKey].expanded = !this.months[monthKey].expanded;
+                
+                // If expanding and month has expenses, create the pie chart
+                if (this.months[monthKey].expanded && this.months[monthKey].expenses.length > 0) {
+                    this.$nextTick(() => {
+                        this.createMonthPieChart(monthName);
+                    });
+                }
             }
         },
         toggleExpenseList(monthName) {
