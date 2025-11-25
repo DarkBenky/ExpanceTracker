@@ -149,8 +149,15 @@
                                     </div>
                                 </div>
 
-                                <!-- Expense List -->
-                                <div class="expenses-list">
+                                <!-- Expenses Dropdown Section -->
+                                <div class="expenses-section">
+                                    <div class="expenses-header" @click="toggleExpensesList(monthKey)">
+                                        <span class="dropdown-icon-small" :class="{ 'open': month.showExpenses }">▶</span>
+                                        <span class="expenses-title">Expenses ({{ month.expenses.length }})</span>
+                                    </div>
+                                    
+                                    <transition name="slide-fade">
+                                        <div v-if="month.showExpenses" class="expenses-list">
                                     <div v-for="expense in month.expenses" :key="expense.id" class="expense-item">
                                         <div class="expense-header" @click="toggleExpense(expense.id)">
                                             <div class="expense-main">
@@ -231,6 +238,8 @@
                                         </transition>
                                     </div>
                                 </div>
+                                    </transition>
+                                </div>
                             </div>
                         </div>
                     </transition>
@@ -251,18 +260,18 @@ export default {
     data() {
         return {
             months: {
-                1: { name: 'January', expenses: [], total: 0, byCategory: {}, isOpen: false },
-                2: { name: 'February', expenses: [], total: 0, byCategory: {}, isOpen: false },
-                3: { name: 'March', expenses: [], total: 0, byCategory: {}, isOpen: false },
-                4: { name: 'April', expenses: [], total: 0, byCategory: {}, isOpen: false },
-                5: { name: 'May', expenses: [], total: 0, byCategory: {}, isOpen: false },
-                6: { name: 'June', expenses: [], total: 0, byCategory: {}, isOpen: false },
-                7: { name: 'July', expenses: [], total: 0, byCategory: {}, isOpen: false },
-                8: { name: 'August', expenses: [], total: 0, byCategory: {}, isOpen: false },
-                9: { name: 'September', expenses: [], total: 0, byCategory: {}, isOpen: false },
-                10: { name: 'October', expenses: [], total: 0, byCategory: {}, isOpen: false },
-                11: { name: 'November', expenses: [], total: 0, byCategory: {}, isOpen: false },
-                12: { name: 'December', expenses: [], total: 0, byCategory: {}, isOpen: false },
+                1: { name: 'January', expenses: [], total: 0, byCategory: {}, isOpen: false, showExpenses: false },
+                2: { name: 'February', expenses: [], total: 0, byCategory: {}, isOpen: false, showExpenses: false },
+                3: { name: 'March', expenses: [], total: 0, byCategory: {}, isOpen: false, showExpenses: false },
+                4: { name: 'April', expenses: [], total: 0, byCategory: {}, isOpen: false, showExpenses: false },
+                5: { name: 'May', expenses: [], total: 0, byCategory: {}, isOpen: false, showExpenses: false },
+                6: { name: 'June', expenses: [], total: 0, byCategory: {}, isOpen: false, showExpenses: false },
+                7: { name: 'July', expenses: [], total: 0, byCategory: {}, isOpen: false, showExpenses: false },
+                8: { name: 'August', expenses: [], total: 0, byCategory: {}, isOpen: false, showExpenses: false },
+                9: { name: 'September', expenses: [], total: 0, byCategory: {}, isOpen: false, showExpenses: false },
+                10: { name: 'October', expenses: [], total: 0, byCategory: {}, isOpen: false, showExpenses: false },
+                11: { name: 'November', expenses: [], total: 0, byCategory: {}, isOpen: false, showExpenses: false },
+                12: { name: 'December', expenses: [], total: 0, byCategory: {}, isOpen: false, showExpenses: false },
             },
             allUsers: [],
             users: {},
@@ -353,6 +362,9 @@ export default {
     methods: {
         toggleMonth(monthKey) {
             this.months[monthKey].isOpen = !this.months[monthKey].isOpen;
+        },
+        toggleExpensesList(monthKey) {
+            this.months[monthKey].showExpenses = !this.months[monthKey].showExpenses;
         },
         toggleExpense(expenseId) {
             // Vue 3 way - direct assignment works due to Proxy-based reactivity
@@ -1223,6 +1235,31 @@ export default {
 .category-amount {
     color: #10b981;
     font-weight: 600;
+}
+
+.expenses-section {
+    margin-top: 1rem;
+}
+
+.expenses-header {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem;
+    background: #2d3748;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.2s;
+    margin-bottom: 0.5rem;
+}
+
+.expenses-header:hover {
+    background: #374151;
+}
+
+.expenses-title {
+    color: #e5e7eb;
+    font-weight: 600;
+    font-size: 1rem;
 }
 
 .expenses-list {
