@@ -61,12 +61,6 @@
         <div v-else class="dashboard">
             <!-- Controls -->
             <div class="controls">
-                <div class="year-selector">
-                    <label for="year-select">Year:</label>
-                    <select id="year-select" v-model="selectedYear" @change="onYearChange" class="year-select">
-                        <option v-for="year in availableYears" :key="year" :value="year">{{ year }}</option>
-                    </select>
-                </div>
                 <div class="chart-controls">
                     <button @click="toggleCharts" class="toggle-btn">
                         {{ showCharts ? 'Hide Charts' : 'Show Charts' }}
@@ -96,148 +90,150 @@
 
             <!-- Monthly Breakdown -->
             <div class="months-grid">
-                <div v-for="month in months" :key="month.name + '-' + groupRenderKey" class="month-card">
+                <div v-for="(month, monthKey) in months" :key="month.name + '-' + groupRenderKey" class="month-card">
 
-                    <div class="month-header" @click="toggleMonth(month.name)">
-                        <div class="month-title-section">
-                            <span class="expand-icon">{{ month.expanded ? '▼' : '▶' }}</span>
-                            <h3>{{ month.name }} </h3>
+                    <div class="month-header" @click="toggleMonth(monthKey)">
+                        <div class="month-header-left">
+                            <span class="dropdown-icon" :class="{ 'open': month.isOpen }">▶</span>
+                            <h3>{{ month.name }}</h3>
+                            <span class="month-total">${{ month.total.toFixed(2) }}</span>
                         </div>
-                        <span class="month-total">${{ month.total.toFixed(2) }}</span>
+                        <button v-if="addExpense != month.name" @click.stop="selectForm(month.name)"
+                            class="btn btn-primary add-expense-btn">Add Expense</button>
+                        <button v-else @click.stop="selectForm(month.name)" class="btn btn-secondary add-expense-btn">Close
+                            Form</button>
                     </div>
 
-                    <div v-if="month.expanded" class="month-expanded-content">
-                        <div class="month-actions">
-                            <button v-if="addExpense != month.name" @click.stop="selectForm(month.name)"
-                                class="btn btn-primary add-expense-btn">Add Expense</button>
-                            <button v-else @click.stop="selectForm(month.name)" class="btn btn-secondary add-expense-btn">Close
-                                Form</button>
-                        </div>
-
-                    <div v-if="addExpense == month.name" class="add-expense-form">
-                        <form @submit.prevent="addExpenseToMonth(month.name)" class="expense-form">
-                            <div class="input-group">
-                                <label for="description">Description</label>
-                                <input type="text" v-model="newExpense.description" required />
+                    <transition name="slide-fade">
+                        <div v-if="month.isOpen" class="month-content-wrapper">
+                            <div v-if="addExpense == month.name" class="add-expense-form">
+                                <form @submit.prevent="addExpenseToMonth(month.name)" class="expense-form">
+                                    <div class="input-group">
+                                        <label for="description">Description</label>
+                                        <input type="text" v-model="newExpense.description" required />
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="amount">Amount</label>
+                                        <input type="number" step="0.01" v-model.number="newExpense.amount" required />
+                                    </div>
+                                    <div class="input-group">
+                                        <label for="category">Category</label>
+                                        <select v-model="newExpense.category" required>
+                                            <option value="" disabled>Select Category</option>
+                                            <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-buttons">
+                                        <button type="submit" class="btn btn-primary">Add Expense</button>
+                                        <button type="button" @click="addExpense = null"
+                                            class="btn btn-secondary">Cancel</button>
+                                    </div>
+                                </form>
                             </div>
-                            <div class="input-group">
-                                <label for="amount">Amount</label>
-                                <input type="number" step="0.01" v-model.number="newExpense.amount" required />
-                            </div>
-                            <div class="input-group">
-                                <label for="category">Category</label>
-                                <select v-model="newExpense.category" required>
-                                    <option value="" disabled>Select Category</option>
-                                    <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
-                                </select>
-                            </div>
-                            <div class="form-buttons">
-                                <button type="submit" class="btn btn-primary">Add Expense</button>
-                                <button type="button" @click="addExpense = null"
-                                    class="btn btn-secondary">Cancel</button>
-                            </div>
-                        </form>
-                    </div>
 
-                    <div v-if="month.expenses.length === 0" class="no-expenses">
-                        <p>No expenses for this month</p>
-                    </div>
-
-                    <div v-if="month.expenses.length > 0" class="month-content">
-                        <!-- Individual Month Pie Chart -->
-                        <div class="month-chart-container">
-                            <canvas :id="`monthChart${month.name}`" class="month-chart"></canvas>
-                        </div>
-
-                        <!-- Category Summary -->
-                        <div class="category-summary">
-                            <div v-for="(amount, category) in month.byCategory" :key="category" class="category-item">
-                                <span class="category-name">{{ category }}</span>
-                                <span class="category-amount">${{ amount.toFixed(2) }}</span>
+                            <div v-if="month.expenses.length === 0" class="no-expenses">
+                                <p>No expenses for this month</p>
                             </div>
-                        </div>
 
-                        <!-- Expense List with Toggle -->
-                        <div class="expenses-list-section">
-                            <div class="expenses-list-header" @click="toggleExpenseList(month.name)">
-                                <h4>
-                                    <span class="expand-icon-small">{{ expandedExpenseLists[month.name] ? '▼' : '▶' }}</span>
-                                    Expense Items ({{ month.expenses.length }})
-                                </h4>
-                            </div>                                <div v-if="expandedExpenseLists[month.name]" class="expenses-list">
+                            <div v-else class="month-content">
+                                <!-- Individual Month Pie Chart -->
+                                <div class="month-chart-container">
+                                    <canvas :id="`monthChart${month.name}`" class="month-chart"></canvas>
+                                </div>
+
+                                <!-- Category Summary -->
+                                <div class="category-summary">
+                                    <div v-for="(amount, category) in month.byCategory" :key="category" class="category-item">
+                                        <span class="category-name">{{ category }}</span>
+                                        <span class="category-amount">${{ amount.toFixed(2) }}</span>
+                                    </div>
+                                </div>
+
+                                <!-- Expense List -->
+                                <div class="expenses-list">
                                     <div v-for="expense in month.expenses" :key="expense.id" class="expense-item">
-                                        <div class="expense-main">
-                                            <span class="expense-description">{{ expense.description }}</span>
-                                            <span class="expense-amount">${{ expense.amount }}</span>
-                                        </div>
-                                        <div class="expense-meta">
-                                            <span class="expense-category">{{ expense.category }}</span>
-                                            <span class="expense-date">{{ formatDate(expense.date) }}</span>
-                                        </div>
-                                        <div class="expense-actions">
-                                            <button @click="deleteExpense(expense.id)"
-                                                class="btn btn-danger expense-action-btn">Delete</button>
-                                            <button v-if="editExpenseId !== expense.id" @click="editExpenseId = expense.id"
-                                                class="btn btn-secondary expense-action-btn">Edit</button>
-                                            <button v-else @click="editExpenseId = null"
-                                                class="btn btn-secondary expense-action-btn">Cancel</button>
-                                        </div>
-                                        <form v-if="this.editExpenseId == expense.id" class="edit-expense-form">
-                                            <div class="input-group">
-                                                <label for="editDescription">Description</label>
-                                                <input type="text" v-model="expense.description" required />
-                                            </div>
-                                            <div class="input-group">
-                                                <label for="editAmount">Amount</label>
-                                                <input type="number" step="0.01" v-model.number="expense.amount" required />
-                                            </div>
-                                            <div class="input-group">
-                                                <label for="editCategory">Category</label>
-                                                <select v-model="expense.category" required>
-                                                    <option value="" disabled>Select Category</option>
-                                                    <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
-                                                </select>
-                                            </div>
-                                            <div class="input-group">
-                                                <label for="editDate">Date</label>
-                                                <div class="date-selectors">
-                                                    <select v-if="editDate.month != '' && editDate.year != ''"
-                                                        v-model="editDate.day" @change="updateExpenseDate(expense)" required>
-                                                        <option value="" disabled>Day</option>
-                                                        <option v-for="day in getDaysInEditMonth(editDate.month, editDate.year)"
-                                                            :key="day" :value="day">
-                                                            {{ day }}
-                                                        </option>
-                                                    </select>
-                                                    <select v-model="editDate.month" @change="updateExpenseDate(expense)"
-                                                        required>
-                                                        <option value="" disabled>Month</option>
-                                                        <option v-for="month in getMonthOptions()" :key="month.value"
-                                                            :value="month.value">
-                                                            {{ month.label }}
-                                                        </option>
-                                                    </select>
-                                                    <select v-model="editDate.year" @change="updateExpenseDate(expense)"
-                                                        required>
-                                                        <option value="" disabled>Year</option>
-                                                        <option v-for="year in getYearOptions()" :key="year" :value="year">
-                                                            {{ year }}
-                                                        </option>
-                                                    </select>
+                                        <div class="expense-header" @click="toggleExpense(expense.id)">
+                                            <div class="expense-main">
+                                                <div class="expense-left">
+                                                    <span class="dropdown-icon-small" :class="{ 'open': isExpenseExpanded(expense.id) }">▶</span>
+                                                    <span class="expense-description">{{ expense.description }}</span>
                                                 </div>
+                                                <span class="expense-amount">${{ expense.amount }}</span>
                                             </div>
-                                            <div class="form-buttons">
-                                                <button type="submit" @click.prevent="updateExpense(expense)"
-                                                    class="btn btn-primary">Update Expense</button>
-                                                <button type="button" @click="this.editExpenseId = null"
-                                                    class="btn btn-secondary">Cancel</button>
+                                        </div>
+                                        
+                                        <transition name="slide-fade">
+                                            <div v-if="isExpenseExpanded(expense.id)" class="expense-details">
+                                                <div class="expense-meta">
+                                                    <span class="expense-category">{{ expense.category }}</span>
+                                                    <span class="expense-date">{{ formatDate(expense.date) }}</span>
+                                                </div>
+                                                <div class="expense-actions">
+                                                    <button @click="deleteExpense(expense.id)"
+                                                        class="btn btn-danger expense-action-btn">Delete</button>
+                                                    <button v-if="editExpenseId !== expense.id" @click="editExpenseId = expense.id"
+                                                        class="btn btn-secondary expense-action-btn">Edit</button>
+                                                    <button v-else @click="editExpenseId = null"
+                                                        class="btn btn-secondary expense-action-btn">Cancel</button>
+                                                </div>
+                                                <form v-if="this.editExpenseId == expense.id" class="edit-expense-form">
+                                                    <div class="input-group">
+                                                        <label for="editDescription">Description</label>
+                                                        <input type="text" v-model="expense.description" required />
+                                                    </div>
+                                                    <div class="input-group">
+                                                        <label for="editAmount">Amount</label>
+                                                        <input type="number" step="0.01" v-model.number="expense.amount" required />
+                                                    </div>
+                                                    <div class="input-group">
+                                                        <label for="editCategory">Category</label>
+                                                        <select v-model="expense.category" required>
+                                                            <option value="" disabled>Select Category</option>
+                                                            <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+                                                        </select>
+                                                    </div>
+                                                    <div class="input-group">
+                                                        <label for="editDate">Date</label>
+                                                        <div class="date-selectors">
+                                                            <select v-if="editDate.month != '' && editDate.year != ''"
+                                                                v-model="editDate.day" @change="updateExpenseDate(expense)" required>
+                                                                <option value="" disabled>Day</option>
+                                                                <option v-for="day in getDaysInEditMonth(editDate.month, editDate.year)"
+                                                                    :key="day" :value="day">
+                                                                    {{ day }}
+                                                                </option>
+                                                            </select>
+                                                            <select v-model="editDate.month" @change="updateExpenseDate(expense)"
+                                                                required>
+                                                                <option value="" disabled>Month</option>
+                                                                <option v-for="month in getMonthOptions()" :key="month.value"
+                                                                    :value="month.value">
+                                                                    {{ month.label }}
+                                                                </option>
+                                                            </select>
+                                                            <select v-model="editDate.year" @change="updateExpenseDate(expense)"
+                                                                required>
+                                                                <option value="" disabled>Year</option>
+                                                                <option v-for="year in getYearOptions()" :key="year" :value="year">
+                                                                    {{ year }}
+                                                                </option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+                                                    <div class="form-buttons">
+                                                        <button type="submit" @click.prevent="updateExpense(expense)"
+                                                            class="btn btn-primary">Update Expense</button>
+                                                        <button type="button" @click="this.editExpenseId = null"
+                                                            class="btn btn-secondary">Cancel</button>
+                                                    </div>
+                                                </form>
                                             </div>
-                                        </form>
+                                        </transition>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    </transition>
                 </div>
             </div>
         </div>
@@ -255,20 +251,19 @@ export default {
     data() {
         return {
             months: {
-                1: { name: 'January', expenses: [], total: 0, byCategory: {}, expanded: false },
-                2: { name: 'February', expenses: [], total: 0, byCategory: {}, expanded: false },
-                3: { name: 'March', expenses: [], total: 0, byCategory: {}, expanded: false },
-                4: { name: 'April', expenses: [], total: 0, byCategory: {}, expanded: false },
-                5: { name: 'May', expenses: [], total: 0, byCategory: {}, expanded: false },
-                6: { name: 'June', expenses: [], total: 0, byCategory: {}, expanded: false },
-                7: { name: 'July', expenses: [], total: 0, byCategory: {}, expanded: false },
-                8: { name: 'August', expenses: [], total: 0, byCategory: {}, expanded: false },
-                9: { name: 'September', expenses: [], total: 0, byCategory: {}, expanded: false },
-                10: { name: 'October', expenses: [], total: 0, byCategory: {}, expanded: false },
-                11: { name: 'November', expenses: [], total: 0, byCategory: {}, expanded: false },
-                12: { name: 'December', expenses: [], total: 0, byCategory: {}, expanded: false },
+                1: { name: 'January', expenses: [], total: 0, byCategory: {}, isOpen: false },
+                2: { name: 'February', expenses: [], total: 0, byCategory: {}, isOpen: false },
+                3: { name: 'March', expenses: [], total: 0, byCategory: {}, isOpen: false },
+                4: { name: 'April', expenses: [], total: 0, byCategory: {}, isOpen: false },
+                5: { name: 'May', expenses: [], total: 0, byCategory: {}, isOpen: false },
+                6: { name: 'June', expenses: [], total: 0, byCategory: {}, isOpen: false },
+                7: { name: 'July', expenses: [], total: 0, byCategory: {}, isOpen: false },
+                8: { name: 'August', expenses: [], total: 0, byCategory: {}, isOpen: false },
+                9: { name: 'September', expenses: [], total: 0, byCategory: {}, isOpen: false },
+                10: { name: 'October', expenses: [], total: 0, byCategory: {}, isOpen: false },
+                11: { name: 'November', expenses: [], total: 0, byCategory: {}, isOpen: false },
+                12: { name: 'December', expenses: [], total: 0, byCategory: {}, isOpen: false },
             },
-            expandedExpenseLists: {},
             allUsers: [],
             users: {},
             addMember: false,
@@ -287,6 +282,7 @@ export default {
             refreshInterval: null,
             autoRefresh: true,
             refreshIntervalTime: 30000, // 30 seconds
+            expandedExpenses: {},
             newExpense: {
                 description: '',
                 amount: 0,
@@ -323,17 +319,9 @@ export default {
             isLoading: false,
             errorMessage: '',
             groupRenderKey: 0, // force canvas re-mount on group change
-            selectedYear: new Date().getFullYear(),
-            availableYears: [],
         }
     },
     async created() {
-        // Initialize available years (last 5 years and next year)
-        const currentYear = new Date().getFullYear();
-        for (let i = currentYear - 5; i <= currentYear + 1; i++) {
-            this.availableYears.push(i);
-        }
-        
         await this.checkExistingToken();
         if (this.isAuthenticated) {
             this.getExpenses();
@@ -363,6 +351,19 @@ export default {
         }
     },
     methods: {
+        toggleMonth(monthKey) {
+            this.months[monthKey].isOpen = !this.months[monthKey].isOpen;
+        },
+        toggleExpense(expenseId) {
+            if (this.expandedExpenses[expenseId]) {
+                this.$delete(this.expandedExpenses, expenseId);
+            } else {
+                this.$set(this.expandedExpenses, expenseId, true);
+            }
+        },
+        isExpenseExpanded(expenseId) {
+            return this.expandedExpenses[expenseId] === true;
+        },
         addNewGroup(groupName) {
             if (!groupName) {
                 console.log('Please enter a group name');
@@ -597,7 +598,6 @@ export default {
         async addExpenseToMonth(monthName) {
             if (!this.newExpense.description || !this.newExpense.amount || !this.newExpense.category) {
                 console.log('Please fill in all fields');
-                alert('Please fill in all fields');
                 return;
             }
 
@@ -606,24 +606,9 @@ export default {
                 this.months[key].name === monthName
             );
 
-            console.log('Month lookup:', { monthName, monthNumber, monthsObject: this.months });
-
-            // Create date for the selected month (using first day of the month) with selected year
-            // monthNumber is a string like "1" for January, "2" for February, etc.
-            const monthIndex = parseInt(monthNumber) - 1; // Convert to 0-based index (0 for January, 1 for February, etc.)
-            const expenseDate = new Date(this.selectedYear, monthIndex, 1);
-            
-            console.log('Adding expense:', {
-                monthName,
-                monthNumber,
-                monthIndex,
-                selectedYear: this.selectedYear,
-                expenseDate: expenseDate.toISOString().split('T')[0],
-                description: this.newExpense.description,
-                amount: this.newExpense.amount,
-                category: this.newExpense.category,
-                groupID: this.groupID
-            });
+            // Create date for the selected month (using first day of the month)
+            const currentYear = new Date().getFullYear();
+            const expenseDate = new Date(currentYear, parseInt(monthNumber), 1);
 
             try {
                 const response = await axios.post(`${this.$apiUrl}expenses`, {
@@ -635,11 +620,7 @@ export default {
                     date: expenseDate.toISOString().split('T')[0] // Format as YYYY-MM-DD
                 });
 
-                console.log('Add expense response:', response);
-
                 if (response.status === 200) {
-                    console.log('Expense added successfully to database!');
-                    
                     // Reset form
                     this.newExpense = {
                         description: '',
@@ -652,24 +633,16 @@ export default {
                     this.addExpense = null;
 
                     // Refresh expenses to show the new one
-                    console.log('Refreshing expenses...');
                     await this.getExpenses();
-                    console.log('Expenses refreshed. Total expenses:', this.expenses.length);
 
-                    // Show a message if the expense was added to a different year
-                    if (expenseDate.getFullYear() !== this.selectedYear) {
-                        alert(`Expense added to ${monthName} ${expenseDate.getFullYear()}. Switch to year ${expenseDate.getFullYear()} to view it.`);
-                    } else {
-                        alert(`Expense added successfully to ${monthName} ${this.selectedYear}!`);
-                    }
+                    console.log('Expense added successfully!');
                 }
             } catch (error) {
                 console.error('Error adding expense:', error);
-                console.error('Error response:', error.response);
                 if (error.response && error.response.data && error.response.data.error) {
-                    alert('Error: ' + error.response.data.error);
+                    console.log('Error: ' + error.response.data.error);
                 } else {
-                    alert('Failed to add expense. Please try again.');
+                    console.log('Failed to add expense. Please try again.');
                 }
             }
         },
@@ -695,21 +668,13 @@ export default {
             Object.values(this.months).forEach(month => month.expenses = []);
 
             for (const expense of this.expenses) {
-                const expenseDate = new Date(expense.date);
-                const expenseYear = expenseDate.getFullYear();
-                
-                // Only show expenses from the selected year
-                if (expenseYear === this.selectedYear) {
-                    const month = expenseDate.getMonth() + 1; // getMonth() returns 0-11
-                    console.log("Sorting expense:", expense, "into month:", month, "for year:", expenseYear);
-                    if (this.months[month]) {
-                        this.months[month].expenses.push(expense);
-                    }
-                } else {
-                    console.log("Skipping expense from year:", expenseYear, "Selected year:", this.selectedYear);
+                const month = new Date(expense.date).getMonth() + 1; // getMonth() returns 0-11
+                console.log("Sorting expense:", expense, "into month:", month);
+                if (this.months[month]) {
+                    this.months[month].expenses.push(expense);
                 }
+                console.log(this.months[month].expenses);
             }
-            console.log("Total expenses loaded:", this.expenses.length, "Selected year:", this.selectedYear);
         },
         calculateTotalByMonth() {
             Object.keys(this.months).forEach(month => {
@@ -886,68 +851,43 @@ export default {
         },
         createMonthlyPieCharts() {
             // Destroy existing month charts
-            Object.values(this.monthCharts).forEach(chart => {
-                if (chart && typeof chart.destroy === 'function') {
-                    chart.destroy();
-                }
-            });
+            Object.values(this.monthCharts).forEach(chart => chart.destroy());
             this.monthCharts = {};
 
             Object.values(this.months).forEach(month => {
-                if (month.expenses.length > 0 && month.expanded) {
+                if (month.expenses.length > 0) {
                     this.$nextTick(() => {
-                        this.createMonthPieChart(month.name);
-                    });
-                }
-            });
-        },
-        createMonthPieChart(monthName) {
-            const ctx = document.getElementById(`monthChart${monthName}`);
-            if (!ctx) {
-                console.log(`Canvas not found for ${monthName}`);
-                return;
-            }
+                        const ctx = document.getElementById(`monthChart${month.name}`);
+                        if (ctx) {
+                            const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#8b5cf6', '#ec4899'];
 
-            // Destroy existing chart if it exists
-            if (this.monthCharts[monthName]) {
-                this.monthCharts[monthName].destroy();
-            }
-
-            const monthKey = Object.keys(this.months).find(key =>
-                this.months[key].name === monthName
-            );
-            const month = this.months[monthKey];
-
-            if (!month || !month.byCategory || Object.keys(month.byCategory).length === 0) {
-                console.log(`No category data for ${monthName}`);
-                return;
-            }
-
-            const colors = ['#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#8b5cf6', '#ec4899'];
-
-            this.monthCharts[monthName] = new Chart(ctx, {
-                type: 'pie',
-                data: {
-                    labels: Object.keys(month.byCategory),
-                    datasets: [{
-                        data: Object.values(month.byCategory),
-                        backgroundColor: colors,
-                        borderColor: '#1f2937',
-                        borderWidth: 2
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                color: '#e5e7eb',
-                                font: { size: 10 }
-                            }
+                            this.monthCharts[month.name] = new Chart(ctx, {
+                                type: 'pie',
+                                data: {
+                                    labels: Object.keys(month.byCategory),
+                                    datasets: [{
+                                        data: Object.values(month.byCategory),
+                                        backgroundColor: colors,
+                                        borderColor: '#1f2937',
+                                        borderWidth: 2
+                                    }]
+                                },
+                                options: {
+                                    responsive: true,
+                                    maintainAspectRatio: false,
+                                    plugins: {
+                                        legend: {
+                                            position: 'bottom',
+                                            labels: {
+                                                color: '#e5e7eb',
+                                                font: { size: 10 }
+                                            }
+                                        }
+                                    }
+                                }
+                            });
                         }
-                    }
+                    });
                 }
             });
         },
@@ -999,40 +939,6 @@ export default {
                 const date = new Date(year, month - 1, day);
                 expense.date = date.toISOString().split('T')[0]; // Update expense date
             }
-        },
-        toggleMonth(monthName) {
-            const monthKey = Object.keys(this.months).find(key =>
-                this.months[key].name === monthName
-            );
-            if (monthKey) {
-                this.months[monthKey].expanded = !this.months[monthKey].expanded;
-                
-                // If expanding and month has expenses, create the pie chart
-                if (this.months[monthKey].expanded && this.months[monthKey].expenses.length > 0) {
-                    this.$nextTick(() => {
-                        this.createMonthPieChart(monthName);
-                    });
-                }
-            }
-        },
-        toggleExpenseList(monthName) {
-            // Vue 3 way: direct assignment with reactive properties
-            this.expandedExpenseLists[monthName] = !this.expandedExpenseLists[monthName];
-        },
-        onYearChange() {
-            // When year changes, re-process the expenses
-            this.sortExpensesByMonth();
-            this.calculateTotalByMonth();
-            this.calculateExpensesByCategory();
-            this.destroyAllCharts();
-            this.groupRenderKey++;
-            this.$nextTick(() => {
-                if (this.showCharts) {
-                    this.createMonthlyChart();
-                    this.createCategoryChart();
-                }
-                this.createMonthlyPieCharts();
-            });
         }
     }
 }
@@ -1076,43 +982,6 @@ export default {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 2rem;
-    flex-wrap: wrap;
-    gap: 1rem;
-}
-
-.year-selector {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-}
-
-.year-selector label {
-    color: #e5e7eb;
-    font-weight: 600;
-    font-size: 1rem;
-}
-
-.year-select {
-    background: #374151;
-    color: #e5e7eb;
-    border: 2px solid #4b5563;
-    border-radius: 8px;
-    padding: 0.75rem 1.5rem;
-    font-size: 1rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.year-select:hover {
-    border-color: #6366f1;
-    background: #4b5563;
-}
-
-.year-select:focus {
-    outline: none;
-    border-color: #6366f1;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
 }
 
 .chart-controls {
@@ -1259,34 +1128,18 @@ export default {
     justify-content: space-between;
     align-items: center;
     cursor: pointer;
-    transition: opacity 0.2s;
+    transition: all 0.3s ease;
 }
 
 .month-header:hover {
-    opacity: 0.9;
+    background: linear-gradient(135deg, #5a6fd8 0%, #6a3f96 100%);
 }
 
-.month-title-section {
+.month-header-left {
     display: flex;
     align-items: center;
     gap: 1rem;
-}
-
-.month-title-section h3 {
-    margin: 0;
-}
-
-.expand-icon {
-    color: white;
-    font-size: 0.875rem;
-    width: 20px;
-    display: inline-block;
-}
-
-.expand-icon-small {
-    color: #d1d5db;
-    font-size: 0.75rem;
-    margin-right: 0.5rem;
+    flex: 1;
 }
 
 .month-header h3 {
@@ -1296,20 +1149,37 @@ export default {
     font-weight: 600;
 }
 
-.month-expanded-content {
-    padding: 1.5rem;
-}
-
-.month-actions {
-    margin-bottom: 1rem;
-    display: flex;
-    justify-content: flex-end;
-}
-
 .month-total {
     color: white;
     font-size: 1.5rem;
     font-weight: 700;
+}
+
+.dropdown-icon {
+    color: white;
+    font-size: 1rem;
+    transition: transform 0.3s ease;
+    display: inline-block;
+}
+
+.dropdown-icon.open {
+    transform: rotate(90deg);
+}
+
+.dropdown-icon-small {
+    color: #e5e7eb;
+    font-size: 0.75rem;
+    transition: transform 0.3s ease;
+    display: inline-block;
+    margin-right: 0.5rem;
+}
+
+.dropdown-icon-small.open {
+    transform: rotate(90deg);
+}
+
+.month-content-wrapper {
+    overflow: hidden;
 }
 
 .month-content {
@@ -1355,22 +1225,37 @@ export default {
 }
 
 .expenses-list {
-    space-y: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
 }
 
 .expense-item {
     background: #374151;
     border-radius: 8px;
-    padding: 1rem;
-    margin-bottom: 0.75rem;
+    overflow: hidden;
     border-left: 4px solid #6366f1;
+    transition: all 0.3s ease;
+}
+
+.expense-item:hover {
+    background: #3f4a5d;
+}
+
+.expense-header {
+    cursor: pointer;
+    padding: 1rem;
 }
 
 .expense-main {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 0.5rem;
+}
+
+.expense-left {
+    display: flex;
+    align-items: center;
 }
 
 .expense-description {
@@ -1384,11 +1269,19 @@ export default {
     font-size: 1.1rem;
 }
 
+.expense-details {
+    padding: 0 1rem 1rem 1rem;
+    border-top: 1px solid #4b5563;
+    margin-top: 0.5rem;
+    padding-top: 0.75rem;
+}
+
 .expense-meta {
     display: flex;
     justify-content: space-between;
     align-items: center;
     font-size: 0.875rem;
+    margin-bottom: 0.75rem;
 }
 
 .expense-category {
@@ -1620,13 +1513,14 @@ export default {
 .add-expense-btn {
     padding: 0.5rem 1rem;
     font-size: 0.875rem;
+    margin-left: auto;
 }
 
 .add-expense-form {
     background: #374151;
     border-radius: 8px;
     padding: 1.5rem;
-    margin-bottom: 1rem;
+    margin: 1rem 1.5rem;
     border: 1px solid #4b5563;
 }
 
@@ -1640,9 +1534,7 @@ export default {
 .expense-actions {
     display: flex;
     gap: 0.5rem;
-    margin-top: 0.75rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid #4b5563;
+    margin-bottom: 0.75rem;
 }
 
 .expense-action-btn {
@@ -1679,36 +1571,31 @@ export default {
     -webkit-text-fill-color: transparent;
 }
 
+/* Transition Animations */
+.slide-fade-enter-active {
+    transition: all 0.3s ease;
+}
+
+.slide-fade-leave-active {
+    transition: all 0.2s ease;
+}
+
+.slide-fade-enter-from,
+.slide-fade-leave-to {
+    opacity: 0;
+    max-height: 0;
+}
+
+.slide-fade-enter-to,
+.slide-fade-leave-from {
+    opacity: 1;
+    max-height: 2000px;
+}
+
 .expenses-list {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
-}
-
-.expenses-list-section {
-    margin-top: 1.5rem;
-}
-
-.expenses-list-header {
-    background: #4b5563;
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 0.2s;
-    margin-bottom: 0.75rem;
-}
-
-.expenses-list-header:hover {
-    background: #5a616d;
-}
-
-.expenses-list-header h4 {
-    color: #e5e7eb;
-    margin: 0;
-    font-size: 1rem;
-    font-weight: 600;
-    display: flex;
-    align-items: center;
 }
 
 @media (max-width: 768px) {
