@@ -162,12 +162,16 @@
                                             </div>
                                         </div>
                                         
+                                        <!-- Always show basic details, only hide actions/edit form -->
+                                        <div class="expense-details-always">
+                                            <div class="expense-meta">
+                                                <span class="expense-category">{{ expense.category }}</span>
+                                                <span class="expense-date">{{ formatDate(expense.date) }}</span>
+                                            </div>
+                                        </div>
+                                        
                                         <transition name="slide-fade">
                                             <div v-if="isExpenseExpanded(expense.id)" class="expense-details">
-                                                <div class="expense-meta">
-                                                    <span class="expense-category">{{ expense.category }}</span>
-                                                    <span class="expense-date">{{ formatDate(expense.date) }}</span>
-                                                </div>
                                                 <div class="expense-actions">
                                                     <button @click="deleteExpense(expense.id)"
                                                         class="btn btn-danger expense-action-btn">Delete</button>
@@ -355,10 +359,11 @@ export default {
             this.months[monthKey].isOpen = !this.months[monthKey].isOpen;
         },
         toggleExpense(expenseId) {
+            // Vue 3 way - direct assignment works due to Proxy-based reactivity
             if (this.expandedExpenses[expenseId]) {
-                this.$delete(this.expandedExpenses, expenseId);
+                delete this.expandedExpenses[expenseId];
             } else {
-                this.$set(this.expandedExpenses, expenseId, true);
+                this.expandedExpenses[expenseId] = true;
             }
         },
         isExpenseExpanded(expenseId) {
@@ -1274,6 +1279,10 @@ export default {
     border-top: 1px solid #4b5563;
     margin-top: 0.5rem;
     padding-top: 0.75rem;
+}
+
+.expense-details-always {
+    padding: 0.5rem 1rem 0 2.5rem;
 }
 
 .expense-meta {
