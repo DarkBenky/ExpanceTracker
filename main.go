@@ -192,50 +192,65 @@ type AddExpenseRequest struct {
 }
 
 func AddExpense(c echo.Context) error {
+	fmt.Println("=== AddExpense called ===")
 	var req AddExpenseRequest
 	if err := c.Bind(&req); err != nil {
+		fmt.Println("Error binding request:", err)
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
 	}
 
+	fmt.Printf("Request data: GroupID=%d, Description=%s, Amount=%.2f, Category=%s, Date=%s\n",
+		req.GroupID, req.Description, req.Amount, req.Category, req.Date)
+
 	// Validate required fields
 	if req.Description == "" || req.Amount <= 0 || req.Category == "" || req.Date == "" || req.GroupID <= 0 {
+		fmt.Println("Validation failed: Missing required fields")
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "All fields are required"})
 	}
 
 	// Validate JWT token and get user ID
 	userID, err := validateToken(req.Token)
 	if err != nil {
+		fmt.Println("Token validation failed:", err)
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
 	}
+	fmt.Println("User ID from token:", userID)
 
 	// check if the user exists
 	exists, err := userExists(userID)
 	if err != nil {
+		fmt.Println("Error checking user existence:", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
 	}
 	if !exists {
+		fmt.Println("User not found:", userID)
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "User not found"})
 	}
 
 	// Check if the user is part of the group
 	isMember, err := isUserInGroup(userID, req.GroupID)
 	if err != nil {
+		fmt.Println("Error checking group membership:", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
 	}
 	if !isMember {
+		fmt.Println("User is not part of group:", userID, req.GroupID)
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "User is not part of the group"})
 	}
 
 	// Insert the expense into the database
-	_, err = db.Exec(`INSERT INTO expenses (description, amount, category, date, owner_group_id) VALUES (?, ?, ?, ?, ?)`,
+	result, err := db.Exec(`INSERT INTO expenses (description, amount, category, date, owner_group_id) VALUES (?, ?, ?, ?, ?)`,
 		req.Description, req.Amount, req.Category, req.Date, req.GroupID)
 	if err != nil {
+		fmt.Println("Error inserting expense:", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to add expense"})
 	}
 
+	expenseID, _ := result.LastInsertId()
+	fmt.Printf("Expense added successfully! ID: %d\n", expenseID)
+
 	return c.JSON(http.StatusOK, map[string]string{"message": "Expense added successfully"})
 }
-
 
 func checkExpenseExists(expenseID int) (bool, error) {
 	var exists bool
@@ -251,7 +266,6 @@ type removeExpenseRequest struct {
 	GroupID   int    `json:"group_id"`   // ID of the group to which the expense belongs
 	ExpenseID int    `json:"expense_id"` // ID of the expense to be removed
 }
-
 
 func RemoveExpense(c echo.Context) error {
 	fmt.Println("RemoveExpense called")
@@ -828,64 +842,64 @@ func populateFakeData() error {
 }
 
 type GetGroupMembersRequest struct {
-    Token   string `json:"token"`    // JWT token for authentication
-    GroupID int    `json:"group_id"` // ID of the group to get members for
+	Token   string `json:"token"`    // JWT token for authentication
+	GroupID int    `json:"group_id"` // ID of the group to get members for
 }
 
 func GetGroupMembers(c echo.Context) error {
-    var req GetGroupMembersRequest
-    if err := c.Bind(&req); err != nil {
-        return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
-    }
+	var req GetGroupMembersRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request"})
+	}
 
-    // Validate JWT token
-    userID, err := validateToken(req.Token)
-    if err != nil {
-        return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
-    }
+	// Validate JWT token
+	userID, err := validateToken(req.Token)
+	if err != nil {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "Invalid token: " + err.Error()})
+	}
 
-    // Check if user is member of the group
-    isMember, err := isUserInGroup(userID, req.GroupID)
-    if err != nil {
-        return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
-    }
-    if !isMember {
-        return c.JSON(http.StatusForbidden, map[string]string{"error": "User is not part of the group"})
-    }
+	// Check if user is member of the group
+	isMember, err := isUserInGroup(userID, req.GroupID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+	if !isMember {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "User is not part of the group"})
+	}
 
-    // Get all users in the group
-    query := `SELECT u.id, u.username 
+	// Get all users in the group
+	query := `SELECT u.id, u.username 
               FROM users u 
               INNER JOIN group_members gm ON u.id = gm.user_id 
               WHERE gm.group_id = ?
               ORDER BY u.username`
 
-    rows, err := db.Query(query, req.GroupID)
-    if err != nil {
-        return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
-    }
-    defer rows.Close()
+	rows, err := db.Query(query, req.GroupID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+	}
+	defer rows.Close()
 
-    var users []struct {
-        ID       int    `json:"id"`
-        Username string `json:"username"`
-    }
+	var users []struct {
+		ID       int    `json:"id"`
+		Username string `json:"username"`
+	}
 
-    for rows.Next() {
-        var user struct {
-            ID       int    `json:"id"`
-            Username string `json:"username"`
-        }
-        err := rows.Scan(&user.ID, &user.Username)
-        if err != nil {
-            return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
-        }
-        users = append(users, user)
-    }
+	for rows.Next() {
+		var user struct {
+			ID       int    `json:"id"`
+			Username string `json:"username"`
+		}
+		err := rows.Scan(&user.ID, &user.Username)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Database error"})
+		}
+		users = append(users, user)
+	}
 
-    return c.JSON(http.StatusOK, map[string]interface{}{
-        "users": users,
-    })
+	return c.JSON(http.StatusOK, map[string]interface{}{
+		"users": users,
+	})
 }
 
 func GetUsers(c echo.Context) error {
@@ -941,30 +955,30 @@ func main() {
 	e := echo.New()
 
 	// Add CORS middleware with more permissive settings
-    e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-        AllowOrigins: []string{
-            "*", // Allow all origins for development
-        },
-        AllowMethods: []string{
-            http.MethodGet, 
-            http.MethodPost, 
-            http.MethodPut, 
-            http.MethodDelete, 
-            http.MethodOptions,
-        },
-        AllowHeaders: []string{
-            echo.HeaderOrigin, 
-            echo.HeaderContentType, 
-            echo.HeaderAccept, 
-            echo.HeaderAuthorization,
-            "X-Requested-With",
-            "Access-Control-Allow-Origin",
-        },
-        AllowCredentials: true,
-    }))
+	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+		AllowOrigins: []string{
+			"*", // Allow all origins for development
+		},
+		AllowMethods: []string{
+			http.MethodGet,
+			http.MethodPost,
+			http.MethodPut,
+			http.MethodDelete,
+			http.MethodOptions,
+		},
+		AllowHeaders: []string{
+			echo.HeaderOrigin,
+			echo.HeaderContentType,
+			echo.HeaderAccept,
+			echo.HeaderAuthorization,
+			"X-Requested-With",
+			"Access-Control-Allow-Origin",
+		},
+		AllowCredentials: true,
+	}))
 
-    // Add logging middleware to see requests
-    e.Use(middleware.Logger())
+	// Add logging middleware to see requests
+	e.Use(middleware.Logger())
 
 	// Routes
 	e.GET("/ping", Ping)

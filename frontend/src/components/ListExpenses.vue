@@ -597,6 +597,7 @@ export default {
         async addExpenseToMonth(monthName) {
             if (!this.newExpense.description || !this.newExpense.amount || !this.newExpense.category) {
                 console.log('Please fill in all fields');
+                alert('Please fill in all fields');
                 return;
             }
 
@@ -607,6 +608,17 @@ export default {
 
             // Create date for the selected month (using first day of the month) with selected year
             const expenseDate = new Date(this.selectedYear, parseInt(monthNumber) - 1, 1);
+            
+            console.log('Adding expense:', {
+                monthName,
+                monthNumber,
+                selectedYear: this.selectedYear,
+                expenseDate: expenseDate.toISOString().split('T')[0],
+                description: this.newExpense.description,
+                amount: this.newExpense.amount,
+                category: this.newExpense.category,
+                groupID: this.groupID
+            });
 
             try {
                 const response = await axios.post(`${this.$apiUrl}expenses`, {
@@ -618,7 +630,11 @@ export default {
                     date: expenseDate.toISOString().split('T')[0] // Format as YYYY-MM-DD
                 });
 
+                console.log('Add expense response:', response);
+
                 if (response.status === 200) {
+                    console.log('Expense added successfully to database!');
+                    
                     // Reset form
                     this.newExpense = {
                         description: '',
@@ -631,21 +647,24 @@ export default {
                     this.addExpense = null;
 
                     // Refresh expenses to show the new one
+                    console.log('Refreshing expenses...');
                     await this.getExpenses();
+                    console.log('Expenses refreshed. Total expenses:', this.expenses.length);
 
-                    console.log('Expense added successfully!');
-                    
                     // Show a message if the expense was added to a different year
                     if (expenseDate.getFullYear() !== this.selectedYear) {
                         alert(`Expense added to ${monthName} ${expenseDate.getFullYear()}. Switch to year ${expenseDate.getFullYear()} to view it.`);
+                    } else {
+                        alert(`Expense added successfully to ${monthName} ${this.selectedYear}!`);
                     }
                 }
             } catch (error) {
                 console.error('Error adding expense:', error);
+                console.error('Error response:', error.response);
                 if (error.response && error.response.data && error.response.data.error) {
-                    console.log('Error: ' + error.response.data.error);
+                    alert('Error: ' + error.response.data.error);
                 } else {
-                    console.log('Failed to add expense. Please try again.');
+                    alert('Failed to add expense. Please try again.');
                 }
             }
         },
