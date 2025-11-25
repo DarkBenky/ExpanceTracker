@@ -108,59 +108,57 @@
                                 Form</button>
                         </div>
 
-                        <div v-if="addExpense == month.name" class="add-expense-form">
-                            <form @submit.prevent="addExpenseToMonth(month.name)" class="expense-form">
-                                <div class="input-group">
-                                    <label for="description">Description</label>
-                                    <input type="text" v-model="newExpense.description" required />
-                                </div>
-                                <div class="input-group">
-                                    <label for="amount">Amount</label>
-                                    <input type="number" step="0.01" v-model.number="newExpense.amount" required />
-                                </div>
-                                <div class="input-group">
-                                    <label for="category">Category</label>
-                                    <select v-model="newExpense.category" required>
-                                        <option value="" disabled>Select Category</option>
-                                        <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
-                                    </select>
-                                </div>
-                                <div class="form-buttons">
-                                    <button type="submit" class="btn btn-primary">Add Expense</button>
-                                    <button type="button" @click="addExpense = null"
-                                        class="btn btn-secondary">Cancel</button>
-                                </div>
-                            </form>
+                    <div v-if="addExpense == month.name" class="add-expense-form">
+                        <form @submit.prevent="addExpenseToMonth(month.name)" class="expense-form">
+                            <div class="input-group">
+                                <label for="description">Description</label>
+                                <input type="text" v-model="newExpense.description" required />
+                            </div>
+                            <div class="input-group">
+                                <label for="amount">Amount</label>
+                                <input type="number" step="0.01" v-model.number="newExpense.amount" required />
+                            </div>
+                            <div class="input-group">
+                                <label for="category">Category</label>
+                                <select v-model="newExpense.category" required>
+                                    <option value="" disabled>Select Category</option>
+                                    <option v-for="cat in categories" :key="cat" :value="cat">{{ cat }}</option>
+                                </select>
+                            </div>
+                            <div class="form-buttons">
+                                <button type="submit" class="btn btn-primary">Add Expense</button>
+                                <button type="button" @click="addExpense = null"
+                                    class="btn btn-secondary">Cancel</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div v-if="month.expenses.length === 0" class="no-expenses">
+                        <p>No expenses for this month</p>
+                    </div>
+
+                    <div v-if="month.expenses.length > 0" class="month-content">
+                        <!-- Individual Month Pie Chart -->
+                        <div class="month-chart-container">
+                            <canvas :id="`monthChart${month.name}`" class="month-chart"></canvas>
                         </div>
 
-                        <div v-if="month.expenses.length === 0" class="no-expenses">
-                            <p>No expenses for this month</p>
+                        <!-- Category Summary -->
+                        <div class="category-summary">
+                            <div v-for="(amount, category) in month.byCategory" :key="category" class="category-item">
+                                <span class="category-name">{{ category }}</span>
+                                <span class="category-amount">${{ amount.toFixed(2) }}</span>
+                            </div>
                         </div>
 
-                        <div v-else class="month-content">
-                            <!-- Individual Month Pie Chart -->
-                            <div class="month-chart-container">
-                                <canvas :id="`monthChart${month.name}`" class="month-chart"></canvas>
-                            </div>
-
-                            <!-- Category Summary -->
-                            <div class="category-summary">
-                                <div v-for="(amount, category) in month.byCategory" :key="category" class="category-item">
-                                    <span class="category-name">{{ category }}</span>
-                                    <span class="category-amount">${{ amount.toFixed(2) }}</span>
-                                </div>
-                            </div>
-
-                            <!-- Expense List with Toggle -->
-                            <div class="expenses-list-section">
-                                <div class="expenses-list-header" @click="toggleExpenseList(month.name)">
-                                    <h4>
-                                        <span class="expand-icon-small">{{ expandedExpenseLists[month.name] ? '▼' : '▶' }}</span>
-                                        Expense Items ({{ month.expenses.length }})
-                                    </h4>
-                                </div>
-
-                                <div v-if="expandedExpenseLists[month.name]" class="expenses-list">
+                        <!-- Expense List with Toggle -->
+                        <div class="expenses-list-section">
+                            <div class="expenses-list-header" @click="toggleExpenseList(month.name)">
+                                <h4>
+                                    <span class="expand-icon-small">{{ expandedExpenseLists[month.name] ? '▼' : '▶' }}</span>
+                                    Expense Items ({{ month.expenses.length }})
+                                </h4>
+                            </div>                                <div v-if="expandedExpenseLists[month.name]" class="expenses-list">
                                     <div v-for="expense in month.expenses" :key="expense.id" class="expense-item">
                                         <div class="expense-main">
                                             <span class="expense-description">{{ expense.description }}</span>
